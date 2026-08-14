@@ -326,39 +326,45 @@ const fragmentShader = /* glsl */ `
       : mix(vec3(1.0), vec3(0.88, 1.15, 0.97), k);
     col *= gain;
 
-    // The acrylic's own gloss: a hard, narrow specular right at the turn of
-    // the cylinder, where the wall is edge-on and throws the room back at you.
-    // Without it the tank has no surface at all — the water simply stops — and
-    // a surface is the difference between a tank and a cylinder-shaped hole.
-    float gloss = smoothstep(0.74, 0.95, edge);
-    col += vec3(0.055, 0.085, 0.125) * gloss;
-
-    // ...and what it throws back is the gallery (scripts/reflection.js).
+    // The gallery on the glass (scripts/reflection.js).
     //
-    // A cylinder is a mirror that compresses: dead centre it shows you what is
-    // directly behind you, and the whole rest of the room is squeezed into the
-    // last tenth of the width at each side. That squeeze is the mapping — the
-    // angle of the wall where the ray entered, not the screen position — and it
-    // is why a reflection on a round tank reads as round and a flat one pasted
-    // across the glass does not.
+    // There was a plain white specular along the turn of the cylinder as well,
+    // added on the argument that without *something* on the surface the water
+    // simply stops. It is gone: a colourless streak is a stand-in for a
+    // reflection, and there is a real reflection here now, so the stand-in was
+    // just a bright smear sitting on top of it.
     //
-    // Weighted by Fresnel, so it is nearly absent face-on and unmistakable at
-    // the two edges, which is where a real one lives. Kept dim and blurred past
-    // reading: a legible visitor in the reflection takes the eye off the tank,
-    // and the tank is the subject.
-    float mirrorX = 0.5 + asin(clamp(nrm.x, -1.0, 1.0)) / 3.14159265;
+    // The mapping is the wrap. asin of the wall normal's x spans the source
+    // image across the front 180 degrees of the cylinder — the hall's own width
+    // laid onto the tank's, compressed toward each side the way a curved
+    // surface compresses it — and it runs *reversed*, because a reflection is
+    // reversed: the case standing on your left appears on the right of the
+    // glass. Blurred past the point where a face is a face, which is the whole
+    // requirement: a legible visitor in the reflection takes the eye off the
+    // tank, and the tank is the subject.
+    // Mirrored, and wrapped across the whole visible face rather than crowded
+    // into the two edges.
+    //
+    // asin of the wall normal's x already spans the full image across the front
+    // 180 degrees of the cylinder, which is the wrap. What was missing is that
+    // it was the wrong way round: a reflection is *reversed*, so the case on
+    // your left appears on the right of the glass. Minus, not plus.
+    float mirrorX = 0.5 - asin(clamp(nrm.x, -1.0, 1.0)) / 3.14159265;
     // Fresnel, but a *glass* Fresnel rather than a mathematician's one. At an
     // exponent of 3.2 the room was confined to the outermost few pixels of the
     // tank, which the plate then covers: the reflection was in the render and
     // could not be seen. Acrylic mirrors well before grazing, and it has a
     // floor — there is always a little of the room in the glass.
-    // The floor matters more than the curve. A tank's front pane shows you the
-    // room even dead-on — that is what standing in front of one looks like —
-    // and at a floor of 0.10 the middle of the glass was carrying half a
-    // percent of the water's own brightness, which is nothing. A third of the
-    // reflection everywhere, all of it at the sides.
-    float fresnel = 0.34 + 0.66 * pow(edge, 1.4);
-    vec3 room = texture2D(uReflect, vec2(mirrorX, clamp(0.34 + vUv.y * 0.40, 0.0, 1.0))).rgb;
+    // Nearly flat, because what is wanted here is not a physicist's reflection
+    // — it is the room laid over the cylinder, reversed, the way it actually
+    // appears on a big curved tank in a dark hall. The room is on the glass
+    // across the whole front; the curve only decides that there is more of it
+    // where the wall turns away.
+    float fresnel = 0.72 + 0.28 * pow(edge, 1.3);
+    // Vertically it is pasted rather than projected: the room's own height maps
+    // onto the tank's, a little compressed and sat low, so the lit cases land
+    // across the middle of the glass and the floor of the hall at the bottom.
+    vec3 room = texture2D(uReflect, vec2(mirrorX, clamp(0.12 + vUv.y * 0.78, 0.0, 1.0))).rgb;
     col += room * fresnel * 1.15;
 
     col *= uLed;
