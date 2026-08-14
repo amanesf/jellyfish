@@ -328,44 +328,33 @@ const fragmentShader = /* glsl */ `
 
     // The gallery on the glass (scripts/reflection.js).
     //
-    // There was a plain white specular along the turn of the cylinder as well,
-    // added on the argument that without *something* on the surface the water
-    // simply stops. It is gone: a colourless streak is a stand-in for a
-    // reflection, and there is a real reflection here now, so the stand-in was
-    // just a bright smear sitting on top of it.
+    // Mixed in, not added. This used to add the room into the water, and
+    // additive light is why it kept coming out as a haze rather than as a
+    // reflection: adding can only brighten, so the *dark* half of the room —
+    // the piers between the cases, the ceiling — had nothing to contribute,
+    // and the whole thing arrived as a soft glow with no shape in it. A
+    // reflection replaces what you would otherwise see through the glass.
+    // Mixing gives the dark parts back, and the dark parts are most of what
+    // makes a room read as a room.
     //
-    // The mapping is the wrap. asin of the wall normal's x spans the source
-    // image across the front 180 degrees of the cylinder — the hall's own width
-    // laid onto the tank's, compressed toward each side the way a curved
-    // surface compresses it — and it runs *reversed*, because a reflection is
-    // reversed: the case standing on your left appears on the right of the
-    // glass. Blurred past the point where a face is a face, which is the whole
-    // requirement: a legible visitor in the reflection takes the eye off the
-    // tank, and the tank is the subject.
-    // Mirrored, and wrapped across the whole visible face rather than crowded
-    // into the two edges.
+    // The mapping is a wrap: asin of the wall normal's x lays the source across
+    // the front 180 degrees of the cylinder, so the hall's width sits on the
+    // tank's and compresses toward each side the way a curved surface
+    // compresses it. Reversed — minus, not plus — because a reflection is
+    // reversed: the case standing to your left belongs on the right of the
+    // glass. Vertically it is pasted, the hall's height onto the tank's, so the
+    // lit cases cross the middle of the glass and the hall's floor is at the
+    // bottom of it.
     //
-    // asin of the wall normal's x already spans the full image across the front
-    // 180 degrees of the cylinder, which is the wrap. What was missing is that
-    // it was the wrong way round: a reflection is *reversed*, so the case on
-    // your left appears on the right of the glass. Minus, not plus.
+    // Weighted only gently by the angle of the wall. A physicist's Fresnel puts
+    // the whole room in the outermost few pixels, which is where the plate's
+    // painted acrylic rim is standing — the reflection was in the render and
+    // could not be seen. On a big curved tank in a dark hall the room is on the
+    // glass right across the front.
     float mirrorX = 0.5 - asin(clamp(nrm.x, -1.0, 1.0)) / 3.14159265;
-    // Fresnel, but a *glass* Fresnel rather than a mathematician's one. At an
-    // exponent of 3.2 the room was confined to the outermost few pixels of the
-    // tank, which the plate then covers: the reflection was in the render and
-    // could not be seen. Acrylic mirrors well before grazing, and it has a
-    // floor — there is always a little of the room in the glass.
-    // Nearly flat, because what is wanted here is not a physicist's reflection
-    // — it is the room laid over the cylinder, reversed, the way it actually
-    // appears on a big curved tank in a dark hall. The room is on the glass
-    // across the whole front; the curve only decides that there is more of it
-    // where the wall turns away.
-    float fresnel = 0.72 + 0.28 * pow(edge, 1.3);
-    // Vertically it is pasted rather than projected: the room's own height maps
-    // onto the tank's, a little compressed and sat low, so the lit cases land
-    // across the middle of the glass and the floor of the hall at the bottom.
-    vec3 room = texture2D(uReflect, vec2(mirrorX, clamp(0.12 + vUv.y * 0.78, 0.0, 1.0))).rgb;
-    col += room * fresnel * 1.15;
+    float facing = 0.72 + 0.28 * pow(edge, 1.3);
+    vec3 room = texture2D(uReflect, vec2(mirrorX, clamp(0.10 + vUv.y * 0.80, 0.0, 1.0))).rgb;
+    col = mix(col, room, facing * 0.34);
 
     col *= uLed;
 

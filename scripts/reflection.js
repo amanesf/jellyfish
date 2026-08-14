@@ -34,9 +34,14 @@ async function main() {
   const meta = await sharp(SRC).metadata();
   const img = await sharp(SRC)
     .resize(W, H, { fit: 'fill' })
-    // Radius 9 at this size is radius 25 on the original: past the point where
-    // a face is a face.
-    .blur(8)
+    // Radius 4 at this size is radius 11 on the original. Past the point where
+    // a face is a face — which is the requirement — and *not* past the point
+    // where a lit case is a lit rectangle, which the first pass at radius 9
+    // was: blurred that far the whole hall became one smooth gradient, and a
+    // smooth gradient on the glass reads as fog on the lens, not as a room.
+    // What has to survive is the layout: bright rectangles at eye height, dark
+    // piers between them, a dark ceiling above.
+    .blur(4)
     // Toward the blue everything else in this picture is lit in. Brightness is
     // deliberately *not* pulled down here any more: the shader adds this into
     // linear light before the tonemap, where the water itself runs 0.02 to 0.44,
@@ -44,7 +49,7 @@ async function main() {
     // came out at four thousandths of the water and could not be seen at all on
     // a phone. Darkening belongs in one place, and that place is the shader,
     // where it can be measured against the water it is added to.
-    .modulate({ brightness: 0.95, saturation: 0.45 })
+    .modulate({ brightness: 0.85, saturation: 0.40 })
     .tint({ r: 150, g: 190, b: 255 })
     .toBuffer();
 
