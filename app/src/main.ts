@@ -64,10 +64,11 @@ new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}plate.webp`, (texture
  */
 let plateReady = false;
 function revealWhenReady(): void {
-  // The scene is already settled before the first frame (the warm-up below),
-  // so the only thing left to wait for is the painting.
-  if (!plateReady) return;
+  // Two things: the painting has to have arrived over the network, and the
+  // water has to have had time to bend the tentacles into shape.
+  if (!plateReady || warmedUp < WARM_UP_STEPS) return;
   document.querySelector('.stage')?.classList.add('ready');
+  document.querySelector('#loader')?.classList.add('gone');
 }
 
 const controls = createControls(document.querySelector<HTMLElement>('#console')!);
@@ -123,19 +124,21 @@ if (frozenAt !== null) {
 }
 
 /*
- * The warm-up.
+ * The warm-up, in slices.
  *
- * The tank was black for three seconds on load, which is long enough to think
- * the page is broken. The wait was real work — a Verlet chain has no shape
- * until the water has bent it, so an unsettled tank shows every tentacle
- * hanging dead straight — but there is no reason to do that work in real time.
- * Six seconds of simulation runs in a fraction of one, the same way the frozen
- * ?t= path catches up above, and the picture is then ready on the first frame
- * the browser draws.
+ * A Verlet chain has no shape until the water has bent it, so a tank shown at
+ * t=0 has every tentacle hanging dead straight; six seconds of simulation fixes
+ * that and takes a noticeable fraction of a second to run. Run as one blocking
+ * loop — which is what this was — that fraction of a second is a frozen tab
+ * with a black rectangle in it, and the CSS loader cannot animate because the
+ * main thread never yields.
+ *
+ * So it is done sixty steps at a time, between frames. The loader pulses
+ * throughout, the page stays responsive, and the picture is revealed on the
+ * frame the last slice finishes.
  */
-if (frozenAt === null) {
-  for (let i = 0; i < 360; i++) step(STEP);
-}
+const WARM_UP_STEPS = frozenAt === null ? 360 : 0;
+let warmedUp = 0;
 
 function frame(now: number): void {
   requestAnimationFrame(frame);
@@ -143,6 +146,18 @@ function frame(now: number): void {
     // Frozen still means *drawn*, every frame. The drawing buffer is not
     // preserved between frames, so a frozen page that skipped the render would
     // hand scripts/capture.js a cleared canvas — which is exactly what it did.
+    swarm.sortForCamera(camera);
+    postFx.render();
+    return;
+  }
+
+  // The warm-up gets the frame to itself until it is done: there is nothing to
+  // show yet, and finishing it sooner is the whole point.
+  if (warmedUp < WARM_UP_STEPS) {
+    const slice = Math.min(60, WARM_UP_STEPS - warmedUp);
+    for (let i = 0; i < slice; i++) step(STEP);
+    warmedUp += slice;
+    last = now;
     swarm.sortForCamera(camera);
     postFx.render();
     return;

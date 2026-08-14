@@ -366,7 +366,12 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
          * 0.85 on a per-animal cycle — which is what actually puts one upside
          * down rather than merely tilted.
          */
-        const keel = 0.85 - 1.2 * (0.5 + 0.5 * Math.sin(time * 0.021 + rand(j.seed, 21) * 6.28))
+        // 0.85 held every swimming animal within a few degrees of vertical, and
+        // the reference's are not vertical — they stream at every angle, mostly
+        // diagonal, because a jellyfish's axis follows the water it is being
+        // carried by and not gravity. 0.55 leaves it standing up on average and
+        // lets the flow lay it over.
+        const keel = 0.55 - 1.2 * (0.5 + 0.5 * Math.sin(time * 0.021 + rand(j.seed, 21) * 6.28))
                      * (1 - j.activity) * (0.35 + rand(j.seed, 22) * 0.75);
         // Righting: a swimming animal that finds itself over pulls harder
         // toward upright than one that is merely tilted, which is what a

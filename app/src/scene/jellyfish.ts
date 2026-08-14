@@ -292,8 +292,14 @@ const bellFragment = /* glsl */ `
     // say that on a dome this shallow — its top and its shoulder differ by very
     // little. The gradient is the animal's own pigment, not its lighting.
     float crown = 1.0 - smoothstep(0.0, 0.72, vRim);
-    float s = 0.24 + 0.30 * top * lit + 0.46 * through * lit + 0.05 * vLobe * vRim
-            + 0.46 * crown
+    // Rounder. Now that the bell is opaque it needs its own modelling, and a
+    // shallow dome under a ceiling light has very little N·L range of its own —
+    // so the term that says "this is a ball and not a disc" has to be the one
+    // that runs from the crown to the skirt, and it has to be strong. The
+    // underside of the skirt goes properly dark, which is what gives the
+    // silhouette its turn.
+    float s = 0.16 + 0.44 * top * lit + 0.46 * through * lit + 0.05 * vLobe * vRim
+            + 0.46 * crown - 0.22 * smoothstep(0.55, 1.0, vRim)
             - 0.50 * canal * smoothstep(0.06, 0.55, vRim);
 
     // Coarse on purpose. Four steps, softly joined: precise shading here turns
@@ -794,7 +800,10 @@ const veilFragment = /* glsl */ `
     // nothing and a third.
     // Denser where the sheet is face-on, nearly gone where the twist has turned
     // it edge-on, so the arm breaks into scraps the way the painted one does.
-    float lace = (0.16 + 0.55 * pow(frill, 1.4)) * (0.30 + 0.70 * vTurn);
+    // Three strands to an arm now, so each is a third of what one was: three
+    // sheets at a third compose to the density one had, and they compose with
+    // *different silhouettes*, which is the whole point of the bundle.
+    float lace = (0.07 + 0.26 * pow(frill, 1.4)) * (0.30 + 0.70 * vTurn);
     float a = uFade * (1.0 - vAlong * (0.72 - 0.22 * uFrill)) * mix(0.52, lace, uFrill);
     gl_FragColor = vec4(col, a);
     if (uMode > 0.5) gl_FragColor = vec4(vec3(circleOfConfusion(vWorld, uCamPos)), step(0.02, a));
@@ -894,7 +903,24 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   // *is* at this size, and the app simply did not have it.
   // Four, which is what a Chrysaora has: four long frilled oral arms hanging
   // from the corners of the mouth, not a ring of them.
+  /*
+   * Four arms, each of them a *bundle*.
+   *
+   * A Chrysaora has four oral arms and this drew four ribbons, which is the
+   * count right and the substance wrong: in the reference each arm is a broad
+   * frilled curtain that folds back on itself many times, and what you see is
+   * a mass with a ragged edge, not a strap. One billboarded ribbon cannot be a
+   * curtain — it has one silhouette and a curtain's whole character is that it
+   * has several, crossing.
+   *
+   * So each arm is three strands hung from the same corner of the mouth, at
+   * slightly different lengths and out of phase in their ruffle. Three sheets
+   * at a third of the opacity compose to the same density as one and read as
+   * folded tissue instead of as a band, which is the same argument the
+   * tentacle count settled the other way round.
+   */
   const armCount = 4;
+  const ARM_STRANDS = 3;
   // Forty, in eight groups of five. An アカクラゲ carries 40-56 tentacles, and
   // they do not come off the margin evenly — they hang in eight clusters, one
   // per octant of the bell, with a gap between each cluster. That grouping is
@@ -928,12 +954,15 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
    */
   const armNodes = species === 'bell' ? 22 : 24;
   const armSegment = size * (species === 'bell' ? 0.21 : 0.30);
-  const tentacleNodes = species === 'bell' ? 18 : 24;
+  // More nodes for the same thread: an arc is only as smooth as the number of
+  // points describing it, and the reference's tentacles are long unbroken
+  // curves rather than the four or five straight runs eighteen nodes give.
+  const tentacleNodes = species === 'bell' ? 26 : 32;
   // Shorter than they were. Eighteen nodes at 0.86 bell radii is fifteen radii
   // of thread, which on the biggest animals reached from the lid of the tank to
   // the floor: the picture was more tentacle than water. Long is right —
   // an akakurage trails metres of it — but the tank has to stay a tank.
-  const tentacleSegment = size * (species === 'bell' ? 0.52 : 0.78);
+  const tentacleSegment = size * (species === 'bell' ? 0.74 : 1.02);
 
   /**
    * Where a strand is attached, as a place *on the bell* rather than as a fixed
@@ -962,9 +991,18 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
    * under the middle of the subumbrella, and they leave the animal together
    * from that single point and only separate further down.
    */
-  for (let i = 0; i < armCount; i++) {
-    const angle = i / armCount;
-    chains.push({ chain: new Chain(armNodes, armSegment, root, rand(seed, 80 + i) * 6.28), kind: 'arm', at: { angle, rim: 0 } });
+  for (let i = 0; i < armCount * ARM_STRANDS; i++) {
+    const corner = Math.floor(i / ARM_STRANDS);
+    const within = (i % ARM_STRANDS) / ARM_STRANDS;
+    // The three strands of one arm share its corner of the mouth, spread by a
+    // few degrees, and differ in length so the bundle's tip is ragged.
+    const angle = (corner + 0.30 + within * 0.40) / armCount;
+    const long = 0.78 + rand(seed, 70 + i) * 0.5;
+    chains.push({
+      chain: new Chain(armNodes, armSegment * long, root, rand(seed, 80 + i) * 6.28),
+      kind: 'arm',
+      at: { angle, rim: 0 },
+    });
   }
   /** How far under the crown the mouth hangs, in bell radii. Past the skirt,
    * which sits near -0.4, so the arms leave from inside the bell. */
@@ -1021,7 +1059,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         // mouth, not a tenth of one — it is a ribbon, and its width is what
         // makes it read as tissue rather than as string.
         uSeed: { value: rand(seed, 2) },
-        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.54 : 0.38) : size * 0.011 },
+        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.62 : 0.44) : size * 0.011 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },
         uLed: { value: LED_JELLY },
@@ -1140,8 +1178,8 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
           // Down the axis to the mouth, with a hair of spread so the four do
           // not begin as a single line.
           const a = c.at.angle * Math.PI * 2;
-          anchor.x += Math.cos(a) * 0.05;
-          anchor.z += Math.sin(a) * 0.05;
+          anchor.x += Math.cos(a) * 0.07;
+          anchor.z += Math.sin(a) * 0.07;
           anchor.y -= ARM_DROP;
         }
         anchor.multiplyScalar(size).applyQuaternion(group.quaternion).add(jelly.position);

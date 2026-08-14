@@ -23,7 +23,10 @@ export interface Snow {
   dispose: () => void;
 }
 
-const COUNT = 2400;
+// Denser. Counted against the reference, which carries motes right across the
+// frame at a spacing of twenty-odd pixels; at 2400 this tank had visible gaps
+// of empty water, and the motes are most of what says there is a volume here.
+const COUNT = 4200;
 
 export function createSnow(camPos: THREE.Vector3): Snow {
   const position = new Float32Array(COUNT * 3);
