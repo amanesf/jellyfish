@@ -57,7 +57,7 @@ export function createPostFx(
     // end: the picture wanted more キラキラ, and bloom is where it comes from —
     // it is what puts a halo on a lit crown and a glow around every mote of
     // marine snow that crosses a light shaft.
-    0.72, // strength
+    0.64, // strength
     0.92, // radius
     0.50, // threshold, in linear light before the tonemap
   );

@@ -427,7 +427,12 @@ const bellFragment = /* glsl */ `
     // very top of the crown; a wet dome under a broad ceiling light carries it
     // across most of the upper surface, and it is the single thing that makes
     // one of these read as lit rather than as coloured.
-    float sheen = pow(max(top, 0.0), 3.6) * (1.0 - smoothstep(0.24, 0.78, vRim));
+    // Narrowed again, to 5.5. Broadening it to 3.6 put a warm near-white over
+    // most of the dome, and a near-white over the dome is the dome's colour
+    // gone: the animals came out as glowing lamps with no hue left to be pink
+    // or amber or anything else. A highlight has to be a *highlight* — the
+    // brightest part of a lit thing, not the thing.
+    float sheen = pow(max(top, 0.0), 5.5) * (1.0 - smoothstep(0.18, 0.66, vRim));
     // Carried up: the animals are the lit thing in a dark room and the crown
     // is the only part of one bright enough to reach the bloom threshold, so
     // this term is the whole of the halo each of them has.
@@ -435,7 +440,7 @@ const bellFragment = /* glsl */ `
     // on it is a plastic toy; the reference's crowns go to near-white and it is
     // the only part of the animal that reaches the bloom threshold, so this
     // term is also the whole of the orange halo each one carries.
-    col += vec3(2.30, 1.55, 0.72) * sheen * glowLit;
+    col += vec3(1.45, 0.98, 0.56) * sheen * glowLit;
     // The halo. In the reference the *water around* a bell is stained orange
     // for a bell's width out from it — the animal is bright enough that the
     // camera blooms on the whole dome and not only its crown. Bloom can only
@@ -544,8 +549,14 @@ const bellFragment = /* glsl */ `
      * modelling; this decides the hue, and it is the animal's hue rather than
      * the painting's.
      */
-    col.g = mix(col.g, col.r * 0.80 + col.g * 0.20, 0.85);
-    col.b = mix(col.b, col.r * 0.30, 0.72);
+    // Backed off from the photograph's own ratios. Green at four fifths of red
+    // with almost no blue is what a live one measures under a white lamp, and
+    // in this picture it came out lemon — because everything around it is cyan,
+    // and against cyan a pure amber reads a stop more yellow than it is. Green
+    // to about seven tenths and a little more blue puts a trace of pink back
+    // in, which is where the eye expects an akakurage to sit.
+    col.g = mix(col.g, col.r * 0.72 + col.g * 0.28, 0.46);
+    col.b = mix(col.b, col.r * 0.52, 0.45);
 
     float bellLum = dot(col, vec3(0.2126, 0.7152, 0.0722));
     // 1.45 overshot: measured against the reference the bells came out R239
@@ -553,7 +564,7 @@ const bellFragment = /* glsl */ `
     // vermilion. The ramp is already saturated (its population was selected for
     // strongly warm pixels, which is the saturated tail of the real bells), so
     // this only has to lift the middle of it.
-    col = max(vec3(0.0), mix(vec3(bellLum), col, 1.16));
+    col = max(vec3(0.0), mix(vec3(bellLum), col, 1.32));
 
     /*
      * How solid the bell is, and the last and largest reason its colour was
