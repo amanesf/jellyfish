@@ -280,7 +280,10 @@ const bellFragment = /* glsl */ `
     // that, and it is why the reference's bells look drawn on rather than
     // striped like a beach ball.
     float band = 0.5 + 0.5 * cos(vAngle * 100.5310);
-    float canal = pow(band, mix(16.0, 4.5, smoothstep(0.1, 1.0, vRim)));
+    // Thinner. In the photograph the stripes are hairlines at the crown that
+    // barely widen — the bell between them is clear amber and it is most of the
+    // area. A wide band makes the dome look segmented.
+    float canal = pow(band, mix(22.0, 7.0, smoothstep(0.1, 1.0, vRim)));
     // The canals carry a lot more of the bell than they were given. In the
     // reference they are the *structure* of the animal — hard bright lines from
     // the crown to the rim over a saturated ground — and at 0.10 they were a
@@ -521,6 +524,29 @@ const bellFragment = /* glsl */ `
      * luminance, so the chroma rises and the tone does not move: nothing about
      * the picture's exposure changes.
      */
+    /*
+     * Amber, not orange — and this one is a stated departure from the rule at
+     * the top of this file.
+     *
+     * The measured ramp cannot produce it. Its population is the *painting's*
+     * bells, selected for r-b greater than 90, so it is orange from end to end:
+     * even its brightest bucket is 2.33, 0.59, 0.13, where green is a quarter of
+     * red. Feed anything through that and you get orange, and a saturated
+     * orange dome with dark radial lines across it does not read as a jellyfish
+     * — it reads as a brain.
+     *
+     * A photograph of the real animal settles it. An akakurage's bell is
+     * translucent amber going to gold, with green a good three quarters of red
+     * and very little blue, and the sixteen stripes are *thin darker gold
+     * lines* over it rather than shadows in it. So the channels are rebalanced
+     * toward those ratios after the ramp lookup: green lifted most of the way
+     * to red, blue pulled down. The ramp still decides the tone and the
+     * modelling; this decides the hue, and it is the animal's hue rather than
+     * the painting's.
+     */
+    col.g = mix(col.g, col.r * 0.80 + col.g * 0.20, 0.85);
+    col.b = mix(col.b, col.r * 0.30, 0.72);
+
     float bellLum = dot(col, vec3(0.2126, 0.7152, 0.0722));
     // 1.45 overshot: measured against the reference the bells came out R239
     // G129 against its R226 G155 — the right hue family, too far round toward
@@ -546,7 +572,11 @@ const bellFragment = /* glsl */ `
      * which is where the sheet actually thins. So the body is solid and the
      * transparency is put where the animal has it.
      */
-    float body = 0.62 + 0.26 * facing - 0.24 * smoothstep(0.72, 1.0, vRim);
+    // Glassier again. The bell was made solid to stop the water behind it
+    // turning it magenta; the hue is fixed at the source now, so the dome can go
+    // back to being something you can see through — which is what the
+    // photograph shows and what 透明感 means here.
+    float body = 0.46 + 0.30 * facing - 0.20 * smoothstep(0.72, 1.0, vRim);
     // The far surface of the same bell, at a third the weight: it is behind a
     // whole animal's worth of tissue, and drawn at full strength it doubles
     // every marking on the near side.
