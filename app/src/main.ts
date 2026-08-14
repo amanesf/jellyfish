@@ -6,6 +6,7 @@ import { createPostFx } from './core/postFx';
 import { createWater } from './scene/water';
 import { createSnow } from './scene/snow';
 import { createDecks } from './scene/decks';
+import { createBubbles } from './scene/bubbles';
 import { createSwarm } from './scene/swarm';
 import { createControls } from './ui/controls';
 import { setLed } from './scene/led';
@@ -33,6 +34,9 @@ scene.add(decks.group);
 
 const snow = createSnow(camera.position);
 scene.add(snow.points);
+
+const bubbles = createBubbles(camera.position);
+scene.add(bubbles.points);
 
 const swarm = createSwarm(scene, camera.position);
 
@@ -108,6 +112,7 @@ function step(dt: number): void {
   postFx.setTime(simTime);
   water.update(simTime, controls.flow(), controls.light());
   decks.update(simTime, controls.flow());
+  bubbles.update(simTime, controls.flow());
   snow.update(simTime, controls.flow());
   swarm.update(dt, simTime, controls.count(), controls.flow());
   revealWhenReady();

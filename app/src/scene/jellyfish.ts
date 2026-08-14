@@ -409,6 +409,13 @@ const bellFragment = /* glsl */ `
     // the only part of the animal that reaches the bloom threshold, so this
     // term is also the whole of the orange halo each one carries.
     col += vec3(1.30, 0.92, 0.44) * sheen * lit;
+    // The halo. In the reference the *water around* a bell is stained orange
+    // for a bell's width out from it — the animal is bright enough that the
+    // camera blooms on the whole dome and not only its crown. Bloom can only
+    // spread what is over its threshold, so the dome itself is carried over it:
+    // a broad, weak, warm term across the whole lit face, which is nothing on
+    // its own and is the halo once the bloom has it.
+    col += vec3(0.42, 0.20, 0.06) * (0.35 + 0.65 * top) * lit * (1.0 - 0.5 * vRim);
 
     // The water in front of it. Same ramp, same shafts as scene/water.ts, so a
     // jellyfish deep in the tank sits *in* the water rather than on top of it.
@@ -803,7 +810,7 @@ const veilFragment = /* glsl */ `
     // Three strands to an arm now, so each is a third of what one was: three
     // sheets at a third compose to the density one had, and they compose with
     // *different silhouettes*, which is the whole point of the bundle.
-    float lace = (0.07 + 0.26 * pow(frill, 1.4)) * (0.30 + 0.70 * vTurn);
+    float lace = (0.08 + 0.30 * pow(frill, 1.3)) * (0.30 + 0.70 * vTurn);
     float a = uFade * (1.0 - vAlong * (0.72 - 0.22 * uFrill)) * mix(0.52, lace, uFrill);
     gl_FragColor = vec4(col, a);
     if (uMode > 0.5) gl_FragColor = vec4(vec3(circleOfConfusion(vWorld, uCamPos)), step(0.02, a));
@@ -920,7 +927,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
    * tentacle count settled the other way round.
    */
   const armCount = 4;
-  const ARM_STRANDS = 3;
+  const ARM_STRANDS = 4;
   // Forty, in eight groups of five. An アカクラゲ carries 40-56 tentacles, and
   // they do not come off the margin evenly — they hang in eight clusters, one
   // per octant of the bell, with a gap between each cluster. That grouping is
@@ -1059,7 +1066,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         // mouth, not a tenth of one — it is a ribbon, and its width is what
         // makes it read as tissue rather than as string.
         uSeed: { value: rand(seed, 2) },
-        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.62 : 0.44) : size * 0.011 },
+        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.74 : 0.52) : size * 0.011 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },
         uLed: { value: LED_JELLY },
