@@ -45,18 +45,18 @@ const KEY = [152, 59, 114];
 /**
  * Everything within this distance of the key is water.
  *
- * Binary rather than a ramp, for the reason sakura found: a narrow tolerance
- * leaves a magenta rim wherever an antialiased edge meets the flood, and
- * nothing partially-keyed survives to be un-mixed.
+ * Tight, and it has to be, because of her hair. The ponytail runs from silver
+ * through peach to pink, and pink hair is *near* the flood: sampled through the
+ * nape and the ponytail, hair pixels sit 55 to 110 from the key while the flood
+ * showing between the strands sits under 12. A tolerance loose enough to be
+ * comfortable — the 60 this started at, let alone sakura's 105 — eats the
+ * strands and hands back a ponytail full of ragged holes.
  *
- * The value is what the girl allows. She is the tightest constraint in the
- * picture, not the tank: her hair sits 87 from the key and her shirt 85, so at
- * sakura's 105 she comes out full of holes. At 60 both survive with room, and
- * what is left over — the parts of her arm and socks that are *literally* the
- * flood colour, 5 and 12 away, where the hand key ran over her — is dealt with
- * by the component filter below rather than by the threshold.
+ * The flood is a single flat colour, so it does not need any room; what needs
+ * room is the antialiased boundary between it and everything else, and that is
+ * handled by the fringe pass below rather than by widening this.
  */
-const KEY_TOLERANCE = 60;
+const KEY_TOLERANCE = 26;
 
 const dist = (r, g, b) => Math.hypot(r - KEY[0], g - KEY[1], b - KEY[2]);
 
@@ -149,6 +149,56 @@ async function main() {
     if (dist(keyed.data[i * C], keyed.data[i * C + 1], keyed.data[i * C + 2]) < KEY_TOLERANCE) water[i] = 1;
   }
 
+  // --- the fringe -----------------------------------------------------------
+  //
+  // A hand key over an antialiased edge leaves a band of pixels that are part
+  // flood and part girl. At a threshold of 60 the ones past halfway are called
+  // water, so the matte eats about a pixel into her all the way round — which
+  // on screen is a magenta seam tracing her legs, her sleeve and every fold of
+  // her trousers. It reads as her being full of holes, and no threshold fixes
+  // it: moving the cut just moves which half of the band is wrong.
+  //
+  // So the band is taken out of the argument. The water is pulled back a pixel,
+  // and every pixel next to it carrying a magenta cast — (r+b)/2 - g well above
+  // what anything in this picture has of its own — is inpainted from its clean
+  // neighbours. Her outline ends up painted in her own colours, and the water
+  // starts just outside it.
+  const cast = (i) => (keyed.data[i * C] + keyed.data[i * C + 2]) / 2 - keyed.data[i * C + 1];
+  const fringe = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (water[i]) continue;
+      let nearWater = false;
+      for (let dy = -2; dy <= 2 && !nearWater; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+          if (water[yy * W + xx]) { nearWater = true; break; }
+        }
+      }
+      if (nearWater && cast(i) > 28) fringe[i] = 1;
+    }
+  }
+  // ...and the outermost ring of the water itself, which is the other half of
+  // the same band.
+  const eroded = new Uint8Array(water);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      if (!water[i]) continue;
+      for (const q of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
+        if (q >= 0 && !water[q]) { eroded[i] = 0; break; }
+      }
+    }
+  }
+  let fringePixels = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (water[i] && !eroded[i]) { water[i] = 0; fringe[i] = 1; }
+    if (fringe[i]) fringePixels++;
+  }
+  console.log(`fringe       ${fringePixels} px of half-keyed edge inpainted`);
+
   // Only the flood itself, not every patch of that colour.
   //
   // The hand key ran over the edges of the girl — antialiased pixels along her
@@ -165,7 +215,7 @@ async function main() {
   // ended up behind her hip. They are inpainted from their surroundings below.
   const MIN_COMPONENT = 100;
   const seen = new Uint8Array(W * H);
-  const inpaint = new Uint8Array(W * H);
+  const inpaint = Uint8Array.from(fringe);
   let droppedPixels = 0, droppedIslands = 0;
   for (let start = 0; start < W * H; start++) {
     if (!water[start] || seen[start]) continue;
@@ -218,6 +268,30 @@ async function main() {
     coverage[i] = Math.min(1, Math.max(0, (opened[i] - base[i] - FLOOR) / (FULL - FLOOR)));
   }
   const cover2 = blurXY(coverage, W, H, 13);
+
+  // The sparkle on the floor by her right shoe. It is a decoration the artwork
+  // came with, not part of the room, and it is the one thing in the frame that
+  // has no business being in a photograph of an aquarium. Detected rather than
+  // boxed out: inside its own neighbourhood it is the only thing brighter than
+  // 90 (the wet floor there sits at 13-52 and the star's centre at 155), so a
+  // threshold finds it without touching the shoe beside it.
+  let sparkle = 0;
+  for (let y = 1118; y < 1168; y++) {
+    for (let x = 816; x < 870; x++) {
+      const i = y * W + x;
+      const L = 0.2126 * keyed.data[i * C] + 0.7152 * keyed.data[i * C + 1] + 0.0722 * keyed.data[i * C + 2];
+      if (L > 90) {
+        // With a margin, so the star's own soft edge goes with it.
+        for (let dy = -3; dy <= 3; dy++) {
+          for (let dx = -3; dx <= 3; dx++) {
+            const q = (y + dy) * W + (x + dx);
+            if (q >= 0 && q < W * H && !inpaint[q] && !water[q]) { inpaint[q] = 1; sparkle++; }
+          }
+        }
+      }
+    }
+  }
+  console.log(`sparkle      ${sparkle} px removed from the floor`);
 
   // Fill the dropped islands from their surroundings, one dilation at a time,
   // so what shows there is her skin and her sock rather than the key.
