@@ -54,7 +54,18 @@ export function setLed(v: number): void {
   // the lamp cannot brighten or darken the tank — only colour it.
   strong.setHSL(0.86 - v * 0.50, 0.95, 0.55);
   strong.multiplyScalar(1 / Math.max(1e-3, REC709(strong)));
-  LED_JELLY.set(strong.r, strong.g, strong.b, Math.min(1, v * 1.15));
+  /*
+   * The lamp leans the animals; it does not repaint them.
+   *
+   * This used to go to full strength — at v past 0.87 an animal's own colour
+   * was gone and it *was* the lamp — and since the wheel turns continuously,
+   * that meant the tank spent most of every two-minute cycle with no orange in
+   * it at all. The bells are the one hot thing in a cold picture and the whole
+   * composition rests on that complementary contrast (see the reference); a
+   * lamp that can delete it is a lamp turned up too far. Capped at a bit over
+   * a third, which is still unmistakable when the wheel comes round.
+   */
+  LED_JELLY.set(strong.r, strong.g, strong.b, Math.min(0.38, v * 0.44));
   // 0.86 is magenta, 0.36 is green, and the knob walks between them.
   LED.setHSL(0.86 - v * 0.50, 0.62, 0.60);
   LED.multiplyScalar(1 / Math.max(1e-3, REC709(LED)));

@@ -359,8 +359,11 @@ const bellFragment = /* glsl */ `
                    * smoothstep(0.86, 0.99, vRim);
 
     float organs = clamp(0.62 * pouch + 0.78 * gonad + 0.9 * rhopalia, 0.0, 1.0);
-    float stain = clamp(0.16 + 0.86 * mark + 0.30 * smoothstep(0.80, 1.0, vRim)
-                        + 0.70 * organs, 0.0, 1.0);
+    // The ground is pigmented too, not only the bands. At 0.16 the bell was
+    // six parts pale tissue to one part colour and came out *pink*; the
+    // reference's are orange all over, with the bands darker orange over it.
+    float stain = clamp(0.80 + 0.20 * mark + 0.10 * smoothstep(0.80, 1.0, vRim)
+                        + 0.20 * organs, 0.0, 1.0);
     vec3 col = mix(flesh, pigment, stain);
 
     /*
@@ -454,6 +457,22 @@ const bellFragment = /* glsl */ `
     // water ramp, so it is the water's blue and not a light invented here.
     float edge = pow(facing, 6.0);
     col += texture2D(uWaterRamp, vec2(0.92, 0.5)).rgb * edge * (0.55 + 0.45 * lit) * 1.5;
+
+    /*
+     * Saturation (item 1).
+     *
+     * The reference's bells are the one hot thing in a cold picture: a
+     * near-vermilion orange against cyan water, complementary and at full
+     * chroma, and they read as light sources rather than as objects because of
+     * it. The measured ramp has that chroma in it — the population it was taken
+     * from is those bells — but the shading term spends most of its time in the
+     * ramp's middle, and the middle of any measured population is where the
+     * chroma has been averaged down. Expanded about the fragment's own
+     * luminance, so the chroma rises and the tone does not move: nothing about
+     * the picture's exposure changes.
+     */
+    float bellLum = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col = max(vec3(0.0), mix(vec3(bellLum), col, 1.45));
 
     float body = 0.20 + 0.46 * facing + 0.30 * smoothstep(0.62, 1.0, vRim);
     // The far surface of the same bell, at a third the weight: it is behind a
@@ -585,9 +604,12 @@ const veilVertex = /* glsl */ `
   attribute float aAlong;
   attribute vec3 aTangent;
   uniform float uWidth;
+  uniform float uFrill;
+  uniform float uSeed;
   uniform vec3 uCamPos;
   varying float vAlong;
   varying float vSide;
+  varying float vTurn;
   varying vec3 vWorld;
 
   void main() {
@@ -597,6 +619,35 @@ const veilVertex = /* glsl */ `
     // Tapered: an oral arm is widest where it leaves the bell and comes to
     // nothing at the tip.
     float w = uWidth * (1.0 - aAlong) * (1.0 - aAlong * 0.4);
+
+    /*
+     * The ruffle, in the *silhouette* — which is the thing three attempts at
+     * this missed and the reference makes obvious.
+     *
+     * Zoom into 1786667042546.png and an oral arm is a strip of white crepe
+     * paper: its edge is torn, lumpy and scalloped, never straight for the
+     * length of a bell, and it is that ragged outline you recognise from across
+     * a room. Every version of this so far drew a smooth-edged ribbon and put
+     * the frill in the *shading* — stripes on a straight strip — which is why
+     * it kept reading as a painted band however the brightness was tuned.
+     *
+     * Two things do it, and both have to be in the geometry:
+     *
+     *  - the width varies along the arm at two incommensurate rates, so the
+     *    edge is a run of lobes and pinches rather than a taper.
+     *  - the arm twists. A frilled sheet in water turns over on itself every
+     *    few centimetres, and each time it turns edge-on it nearly disappears
+     *    and then opens out again. The ribbon is billboarded at the camera, so
+     *    a twist is exactly a periodic collapse of its width — which is also
+     *    why a real one looks like a run of separate scraps when it is one
+     *    continuous sheet.
+     */
+    float lobes = 0.60 + 0.40 * sin(aAlong * 26.0 + uSeed * 6.28)
+                       + 0.20 * sin(aAlong * 61.0 - uSeed * 3.10);
+    float twist = 0.28 + 0.72 * abs(cos(aAlong * 8.5 + uSeed * 5.7));
+    w *= mix(1.0, lobes * twist, uFrill);
+    vTurn = twist;
+
     world += side * aSide * w;
     vAlong = aAlong;
     vSide = aSide;
@@ -609,6 +660,7 @@ const veilFragment = /* glsl */ `
   precision highp float;
   varying float vAlong;
   varying float vSide;
+  varying float vTurn;
   varying vec3 vWorld;
   uniform sampler2D uRamp;
   uniform sampler2D uWaterRamp;
@@ -647,7 +699,12 @@ const veilFragment = /* glsl */ `
     // light, and it holds that brightness most of the way down its length —
     // the old fall of 0.32 with distance had the ribbon fading out half way,
     // which is what a tentacle does, not an arm.
-    float s = 0.30 + 0.34 * lit + uFrill * (0.16 + 0.22 * frill) - (0.32 - 0.10 * uFrill) * vAlong
+    // High contrast, because the reference's arms are nearly black and white: a
+    // fold turned to the light goes to paper-white and the crease beside it
+    // drops to the water's own dark blue. One tone with a gentle ripple on it
+    // is a ribbon; this is lace.
+    float s = 0.30 + 0.34 * lit + uFrill * (0.30 * frill + 0.34 * vTurn)
+            - (0.32 - 0.10 * uFrill) * vAlong
             + (1.0 - uFrill) * 0.16;
     float banded = floor(s * 5.0 + 0.5) / 5.0;
     s = clamp(mix(s, banded, 0.4), 0.0, 1.0);
@@ -700,7 +757,9 @@ const veilFragment = /* glsl */ `
     // still drive the opacity — that is what makes an edge ragged rather than
     // cut — but they drive it between a half and a whole rather than between
     // nothing and a third.
-    float lace = 0.09 + 0.34 * pow(frill, 1.7);
+    // Denser where the sheet is face-on, nearly gone where the twist has turned
+    // it edge-on, so the arm breaks into scraps the way the painted one does.
+    float lace = (0.16 + 0.55 * pow(frill, 1.4)) * (0.30 + 0.70 * vTurn);
     float a = uFade * (1.0 - vAlong * (0.72 - 0.22 * uFrill)) * mix(0.52, lace, uFrill);
     gl_FragColor = vec4(col, a);
     if (uMode > 0.5) gl_FragColor = vec4(vec3(circleOfConfusion(vWorld, uCamPos)), step(0.02, a));
@@ -914,7 +973,8 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         // Wide. An oral arm in the reference is most of a bell across at the
         // mouth, not a tenth of one — it is a ribbon, and its width is what
         // makes it read as tissue rather than as string.
-        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.34 : 0.24) : size * 0.011 },
+        uSeed: { value: rand(seed, 2) },
+        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.54 : 0.38) : size * 0.011 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },
         uLed: { value: LED_JELLY },

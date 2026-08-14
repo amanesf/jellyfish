@@ -159,7 +159,7 @@ export const PlateShader = {
       // Sharpened once more, so the line has a core rather than a shoulder.
       spec *= spec;
       float breathe = 0.72 + 0.28 * sin(uTime * 0.21 + vUv.y * 5.3);
-      col += vec3(0.86, 0.93, 1.0) * spec * breathe * 0.46;
+      col += vec3(0.86, 0.93, 1.0) * spec * breathe * 0.95;
 
       gl_FragColor = vec4(col, 1.0);
     }

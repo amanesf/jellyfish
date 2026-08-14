@@ -362,6 +362,44 @@ async function main() {
   // Which pixels were filled, kept because the fill loop clears the flag as it
   // goes: a filled pixel is fully painted whatever its coverage measured, since
   // what it measured was the key running over her.
+  /*
+   * Antialias the matte.
+   *
+   * Measured across her arm, the coverage went 6, 127, 255 in three
+   * consecutive pixels: the ramp is *there* but it is one pixel wide, which is
+   * a hard edge with a single grey pixel on it — and a hard edge on a figure
+   * this size is the ジャギジャギ staircase down her arm and her ponytail.
+   *
+   * The ramp cannot simply be widened. It is held tight (KEY_IN/KEY_OUT above)
+   * because her pink hair lives 55 to 110 from the key and a loose tolerance
+   * eats the strands. What can be done instead is to reconstruct the coverage
+   * the way an antialiased edge would have measured it: a one-pixel tent over
+   * the coverage field. Away from an edge the field is flat 0 or flat 1 and a
+   * blur changes nothing; across one it gives the two or three intermediate
+   * values the silhouette needs to stop being a staircase.
+   *
+   * One pixel and no more. Two is a halo.
+   */
+  const softCover = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let sum = 0, n = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const yy = Math.min(H - 1, Math.max(0, y + dy));
+          const xx = Math.min(W - 1, Math.max(0, x + dx));
+          // A tent rather than a box: the centre pixel keeps most of its own
+          // value, so a one-pixel feature is softened and not erased.
+          const w = (dx === 0 ? 2 : 1) * (dy === 0 ? 2 : 1);
+          sum += paintCover[yy * W + xx] * w;
+          n += w;
+        }
+      }
+      softCover[y * W + x] = sum / n;
+    }
+  }
+  paintCover.set(softCover);
+
   const inpaintedAt = Uint8Array.from(inpaint);
   const paint = Buffer.from(keyed.data);
   for (let pass = 0; pass < 40; pass++) {

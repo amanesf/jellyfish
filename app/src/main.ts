@@ -64,7 +64,9 @@ new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}plate.webp`, (texture
  */
 let plateReady = false;
 function revealWhenReady(): void {
-  if (!plateReady || simTime < 2.5) return;
+  // The scene is already settled before the first frame (the warm-up below),
+  // so the only thing left to wait for is the painting.
+  if (!plateReady) return;
   document.querySelector('.stage')?.classList.add('ready');
 }
 
@@ -118,6 +120,21 @@ if (frozenAt !== null) {
   while (simTime < target) step(STEP);
   swarm.sortForCamera(camera);
   postFx.render();
+}
+
+/*
+ * The warm-up.
+ *
+ * The tank was black for three seconds on load, which is long enough to think
+ * the page is broken. The wait was real work — a Verlet chain has no shape
+ * until the water has bent it, so an unsettled tank shows every tentacle
+ * hanging dead straight — but there is no reason to do that work in real time.
+ * Six seconds of simulation runs in a fraction of one, the same way the frozen
+ * ?t= path catches up above, and the picture is then ready on the first frame
+ * the browser draws.
+ */
+if (frozenAt === null) {
+  for (let i = 0; i < 360; i++) step(STEP);
 }
 
 function frame(now: number): void {

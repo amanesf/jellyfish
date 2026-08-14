@@ -42,22 +42,38 @@ export const FOCUS = { value: EYE_DISTANCE - 0.62 };
  * whole tank is only two radii deep, and a range much tighter than this puts
  * the entire far half at maximum blur, which reads as fog rather than as
  * a lens. */
-export const RANGE = { value: 2.35 };
+export const RANGE = { value: 1.85 };
+
+/**
+ * How much less the near side of focus blurs than the far side.
+ *
+ * A real lens is symmetric about its focal plane and this is not, for the
+ * reason the reference shows: its far animals are big soft orange discs, which
+ * is most of the light in the top half of that picture, while nothing in front
+ * of the focal plane is blurred at all — because there is nothing there.
+ * Blurring the near half buys nothing and costs the sharpest animals in the
+ * tank.
+ */
+export const NEAR_BIAS = { value: 0.22 };
 
 /** Dropped into every shader that draws inside the tank. */
 export const COC_GLSL = /* glsl */ `
   uniform float uMode;
   uniform float uFocus;
   uniform float uRange;
+  uniform float uNearBias;
 
   float circleOfConfusion(vec3 world, vec3 eye) {
-    return clamp(abs(distance(world, eye) - uFocus) / uRange, 0.0, 1.0);
+    float d = distance(world, eye) - uFocus;
+    // Behind the focal plane it blurs in full; in front of it, barely.
+    float signed = d > 0.0 ? d : -d * uNearBias;
+    return clamp(signed / uRange, 0.0, 1.0);
   }
 `;
 
 /** The three uniforms COC_GLSL declares, for a material's uniform block. */
 export function cocUniforms() {
-  return { uMode: RENDER_MODE, uFocus: FOCUS, uRange: RANGE };
+  return { uMode: RENDER_MODE, uFocus: FOCUS, uRange: RANGE, uNearBias: NEAR_BIAS };
 }
 
 /**
@@ -82,7 +98,7 @@ export const DofShader = {
      * is two radii deep and the animals in it are 40 to 80 px across, so a
      * radius past three or four stops reading as a lens and starts reading as
      * a smudge. */
-    uMaxRadius: { value: 3.2 },
+    uMaxRadius: { value: 8.0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;

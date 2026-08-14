@@ -70,7 +70,7 @@ const fragmentShader = /* glsl */ `
     // nothing, which is what puts the two of them at different tones and stops
     // the tank looking like a tube with two identical caps.
     float lit = descent(vWorld.y) * shaft(vWorld, uTime, uFlow);
-    base *= 1.0 + (uFacing > 0.0 ? 0.55 : 0.15) * lit;
+    base *= 1.0 + (uFacing > 0.0 ? 0.85 : 0.15) * lit;
 
     /*
      * Caustics.
@@ -106,7 +106,7 @@ const fragmentShader = /* glsl */ `
     // and absent where none does — which is what ties the pattern on the floor
     // to the columns standing over it.
     float reach = uFacing > 0.0 ? 1.0 : 0.20;
-    base += texture2D(uWaterRamp, vec2(0.97, 0.5)).rgb * caustic * lit * reach * 1.5;
+    base += texture2D(uWaterRamp, vec2(0.97, 0.5)).rgb * caustic * lit * reach * 5.2;
 
     // The rim, which is the whole point of the exercise.
     //
