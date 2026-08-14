@@ -93,6 +93,7 @@ export function createSnow(camPos: THREE.Vector3): Snow {
       varying float vSeed;
       uniform sampler2D uRamp;
       uniform vec3 uLed;
+      uniform float uTime;
       void main() {
         vec2 d = gl_PointCoord - 0.5;
         float r = dot(d, d);
@@ -113,7 +114,23 @@ export function createSnow(camPos: THREE.Vector3): Snow {
         // Additive, so the brightness is capped rather than left to the shaft:
         // where a beam crosses a dense patch the sum ran past white and the
         // patch stopped being made of motes.
-        gl_FragColor = vec4(col * uLed * min(1.7, 0.9 + 1.5 * vLit), soft * (0.30 + 0.52 * vLit));
+        // Twinkle (item 7).
+        //
+        // A mote of marine snow is a flake, not a sphere: it turns as it falls,
+        // and every so often a face of it comes square to the light and it
+        // flares for half a second. That intermittency is most of what reads as
+        // キラキラ — a field of steadily lit dots reads as dust on the lens.
+        // Two incommensurate rates per mote, so no two flare together and the
+        // pattern never comes round again.
+        float turn = sin(uTime * (0.9 + vSeed * 1.7) + vSeed * 41.0)
+                   * sin(uTime * (0.31 + vSeed * 0.6) + vSeed * 17.0);
+        float flare = pow(max(0.0, turn), 6.0);
+        // The flare is a *core*, much smaller than the mote, which is what
+        // keeps it a glint rather than a swelling.
+        float glint = flare * (1.0 - smoothstep(0.0, 0.06, r));
+        vec3 lit = col * uLed * min(1.7, 0.9 + 1.5 * vLit);
+        lit += uLed * glint * (0.7 + 1.5 * vLit);
+        gl_FragColor = vec4(lit, soft * (0.30 + 0.52 * vLit) + glint * 0.55);
       }
     `,
     transparent: true,

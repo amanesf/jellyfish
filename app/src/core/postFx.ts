@@ -24,6 +24,8 @@ import { FRAME_WIDTH, FRAME_HEIGHT } from './tank';
 export interface PostFx {
   composer: EffectComposer;
   setPlate: (texture: THREE.Texture) => void;
+  /** The clock, for the acrylic's specular (effects/plateShader.ts). */
+  setTime: (t: number) => void;
   dispose: () => void;
 }
 
@@ -46,9 +48,13 @@ export function createPostFx(
   // sRGB 210 (0.66 linear) and the bells reach past 240.
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(FRAME_WIDTH, FRAME_HEIGHT),
-    0.42, // strength
-    0.85, // radius
-    0.62, // threshold, in linear light before the tonemap
+    // Carried up, and the threshold down to just above the water's own top
+    // end: the picture wanted more キラキラ, and bloom is where it comes from —
+    // it is what puts a halo on a lit crown and a glow around every mote of
+    // marine snow that crosses a light shaft.
+    0.52, // strength
+    0.92, // radius
+    0.56, // threshold, in linear light before the tonemap
   );
   composer.addPass(bloom);
 
@@ -68,6 +74,9 @@ export function createPostFx(
     composer,
     setPlate(texture) {
       plate.uniforms.tPlate.value = texture;
+    },
+    setTime(t) {
+      plate.uniforms.uTime.value = t;
     },
     dispose() {
       composer.dispose();

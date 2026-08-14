@@ -140,9 +140,26 @@ export const WATER_GLSL = /* glsl */ `
     // returning a multiplier around 1.0, the tone is set by descent() alone and
     // the field only says where the beams are.
     const float FIELD_MEAN = 0.469;
+    /*
+     * The waver.
+     *
+     * The beams drift — the whole field slides at 0.035 units a second — but
+     * drifting is not what light through water does. The surface above the tank
+     * is moving, and what that does to a beam is make it *breathe*: it
+     * brightens and dims and wanders a little, several times slower than a
+     * wave but far faster than the field's own drift, and it is the single
+     * thing that separates lit water from a blue gradient with stripes on it.
+     *
+     * Two rates, incommensurate, on a coarse spatial scale so a whole beam
+     * moves together rather than the water boiling. Small: at 0.16 it is a
+     * shimmer, and anything much past that is a disco.
+     */
+    float waver = sin(q.x * 2.3 + time * 0.62) * 0.6
+                + sin(q.y * 1.7 - time * 0.41 + 1.7) * 0.4;
+    float shimmer = 1.0 + 0.16 * waver;
     // The scale is what the old expression averaged to, so the water's tone is
     // where it was fitted; all that has changed is that it no longer moves.
-    return clamp(0.30 * (1.0 + (bands - FIELD_MEAN) * 2.0 * contrast), 0.0, 1.6);
+    return clamp(0.30 * shimmer * (1.0 + (bands - FIELD_MEAN) * 2.0 * contrast), 0.0, 1.6);
   }
 
   /** Light reaching depth y at all, before the shafts bunch it up. */
