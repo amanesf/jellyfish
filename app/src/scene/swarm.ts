@@ -156,9 +156,21 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
     // 40 px across and its oral arms are a suggestion rather than a shape. The
     // animal is what the picture is for, so it is given the near half of the
     // depth range instead.
+    // The top of the range, at seven tenths of what it was.
+    //
+    // The biggest warm bells were reading as too big for the tank — 0.240 tank
+    // radii is a bell a fifth of the way across the water, and two of them near
+    // the front filled the frame. The maximum is now 0.168 for a warm bell and
+    // 0.104 for a pale one.
+    //
+    // The warm bells' *minimum* came down with it, by a tenth, and that is a
+    // deliberate departure from "leave the small ones alone": the old minimum
+    // was 0.166, which is the new maximum, so keeping it would have made every
+    // warm bell in the tank exactly the same size. A population of identical
+    // animals is a worse picture than a slightly smaller smallest one.
     const size = species === 'bell'
-      ? 0.166 + rand(seed, 3) * 0.074
-      : 0.088 + rand(seed, 3) * 0.060;
+      ? 0.150 + rand(seed, 3) * 0.018
+      : 0.088 + rand(seed, 3) * 0.016;
     // Slower, and slower than the textbook 0.8-1.4 Hz on purpose: those numbers
     // are for a small animal in open water, and what a big one in a display
     // tank does is closer to a stroke every two seconds. The rests between
@@ -307,6 +319,25 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
         flowField(j.position.x, j.position.y, j.position.z, force);
         j.velocity.addScaledVector(force, dt * 0.55);
         j.velocity.multiplyScalar(Math.pow(0.14, dt)); // water, not air
+        /*
+         * A ceiling on how fast anything may go, and it is a bug fix.
+         *
+         * Every so often an animal darted — visibly about twice the speed of
+         * everything else, for half a second. The separation force is why: it
+         * is quadratic in the population and it fires on *every* overlapping
+         * pair, so with fifteen animals in the tank a knot of three or four
+         * hands one of them three or four impulses in the same step. Against a
+         * damping of 0.14 per second that is a shove, and a shoved jellyfish
+         * crosses a bell's width before the water takes it back.
+         *
+         * Rather than weaken the separation — which is what keeps the tank from
+         * clumping — the speed itself is capped. Nothing in this water has any
+         * business moving faster than a slow swimmer, and a jellyfish least of
+         * all: the cap is about a third of a tank radius a second, which is
+         * roughly what one of them manages on a hard stroke.
+         */
+        const speed = j.velocity.length();
+        if (speed > 0.34) j.velocity.multiplyScalar(0.34 / speed);
         // Neutrally buoyant, and it has to be exactly that.
         //
         // This used to be a steady -0.02, "very slightly heavy", and over a

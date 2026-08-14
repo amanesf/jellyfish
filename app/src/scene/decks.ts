@@ -70,7 +70,43 @@ const fragmentShader = /* glsl */ `
     // nothing, which is what puts the two of them at different tones and stops
     // the tank looking like a tube with two identical caps.
     float lit = descent(vWorld.y) * shaft(vWorld, uTime, uFlow);
-    base *= 1.0 + (uFacing > 0.0 ? 1.35 : 0.30) * lit;
+    base *= 1.0 + (uFacing > 0.0 ? 0.55 : 0.15) * lit;
+
+    /*
+     * Caustics.
+     *
+     * The tank is lit from a ceiling through a moving water surface, and what
+     * that does to the floor of any real tank is throw a net of bright lines
+     * across it that crawls and re-knits itself continuously. It is the most
+     * alive thing in an aquarium and the picture had none of it.
+     *
+     * Built the way a caustic actually forms rather than as a texture: a
+     * caustic is a fold in the wavefront, a place where rays that left the
+     * surface far apart arrive together, so it is a thin bright line with a
+     * hard core and a soft skirt — not a blob. Ridges of a noise field give
+     * exactly that shape, and raising them to a power puts the core where it
+     * belongs.
+     *
+     * Two nets at different scales drifting at different rates, so the pattern
+     * never repeats and never reads as a scrolling texture. The floor takes it
+     * at full strength; the underside of the lid takes a fifth, because what
+     * reaches it is only what has bounced back up.
+     */
+    vec2 cw = vLocal * 3.4 + vec2(uTime * 0.055, uTime * -0.041);
+    float n1 = fbm(cw * 1.9);
+    float n2 = fbm(cw * 1.9 + vec2(5.2, 1.3) + uTime * 0.03);
+    float ridge = (1.0 - abs(n1 * 2.0 - 1.0)) * (1.0 - abs(n2 * 2.0 - 1.0));
+    float caustic = pow(clamp(ridge, 0.0, 1.0), 3.4);
+    // A coarser net over it: the bright cells the fine lines run between,
+    // which is what gives the pattern its large-scale structure.
+    float coarse = pow(clamp(1.0 - abs(fbm(cw * 0.62 - uTime * 0.02) * 2.0 - 1.0), 0.0, 1.0), 2.2);
+    caustic *= 0.45 + 0.85 * coarse;
+
+    // Drawn by the shafts' own light, so the net is bright where a beam lands
+    // and absent where none does — which is what ties the pattern on the floor
+    // to the columns standing over it.
+    float reach = uFacing > 0.0 ? 1.0 : 0.20;
+    base += texture2D(uWaterRamp, vec2(0.97, 0.5)).rgb * caustic * lit * reach * 1.5;
 
     // The rim, which is the whole point of the exercise.
     //
@@ -79,23 +115,46 @@ const fragmentShader = /* glsl */ `
     // no edge. This is the light that grazes it: brightest in the last few
     // percent of the radius, where the disc meets the acrylic, which is also
     // exactly where the reference paints a thin bright line around the base.
-    float rim = smoothstep(0.93, 1.0, r);
-    base += texture2D(uWaterRamp, vec2(0.86, 0.5)).rgb * rim * (0.30 + 0.55 * lit);
+    // Thin, and only where the disc actually meets the acrylic. The first
+    // version made this a bright band a tenth of the radius wide, which is not
+    // a waterline — it is a drawn ellipse, and a drawn ellipse is most of why
+    // the discs looked stuck on top of the painting rather than inside it.
+    float rim = smoothstep(0.975, 0.998, r);
+    base += texture2D(uWaterRamp, vec2(0.80, 0.5)).rgb * rim * (0.14 + 0.30 * lit);
 
-    // The water standing in front of it. The far half of each disc is two
-    // radii of water away and the near half is none, so the disc veils across
-    // its own width — which is the depth cue the whole thing exists for.
+    /*
+     * The water in front of it, done as *transmittance* rather than as a mix,
+     * and this is the whole of why the discs were floating off the picture.
+     *
+     * The water is a full-screen pass that has already been drawn when these
+     * are composited. A disc drawn opaque therefore does not sit in the water —
+     * it replaces every metre of water between itself and the eye, which for
+     * the far half of a disc is the whole depth of the tank. Mixing 58% of the
+     * water's colour back in, which is what this did, is a paint job standing
+     * in for an occlusion: it lightened the disc without ever putting anything
+     * in front of it, so the disc came out as a pale flat lens lying on the
+     * glass.
+     *
+     * What the disc actually is, is a dark surface seen *through* a column of
+     * water. So its alpha is the transmittance of that column — one at the near
+     * edge, where there is no water in the way, falling to nearly nothing at
+     * the far edge two radii back — and the water pass already on the screen
+     * supplies the rest. The far edge of each disc now dissolves into the water
+     * instead of being drawn on it, which is what the eye reads as depth.
+     */
     float dist = length(uCamPos - vWorld);
-    float veil = 1.0 - exp(-max(0.0, dist - 5.6) * 0.24);
-    float ws = clamp(lit * 1.3, 0.0, 1.0);
-    vec3 col = mix(base, texture2D(uWaterRamp, vec2(ws, 0.5)).rgb, veil * 0.58);
+    float through = exp(-max(0.0, dist - 5.6) * 0.30);
 
-    col *= uLed;
+    vec3 col = base * uLed;
 
     // Sharp, always: it is a background plane and blurring it would put the
     // tank's own structure out of focus (core/dof.ts).
     if (uMode > 0.5) discard;
-    gl_FragColor = vec4(col, 1.0);
+    // ...and the very edge of the disc fades rather than ending, because the
+    // acrylic it runs into is painted and the seam has to be given somewhere
+    // to happen.
+    float edge = 1.0 - smoothstep(0.992, 1.0, r);
+    gl_FragColor = vec4(col, clamp(through, 0.0, 1.0) * edge);
   }
 `;
 

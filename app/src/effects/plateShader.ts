@@ -74,10 +74,28 @@ export const PlateShader = {
        * is enough to read as thickness and small enough that the seam holds.
        */
       float u = clamp((vUv.x - uAxis) / uRadius, -1.0, 1.0);
-      float bend = (asin(u) - asin(u / 1.34)) * uRadius * 0.34;
+      float bend = (asin(u) - asin(u / 1.34)) * uRadius * 0.26;
       // Only where there is glass to refract through: full inside the tank,
       // out to nothing across the last of the rim, and never on the room.
       float inTank = 1.0 - smoothstep(0.86, 1.0, abs(u));
+      /*
+       * ...and it lets go at the lid and the base.
+       *
+       * The refraction bends the render and cannot bend the painting, which is
+       * fine in the middle of the tank where the two are not touching and
+       * wrong at the two ends where they are. The water's ceiling and floor
+       * (scene/decks.ts) are ellipses drawn to land on the painted lid and
+       * base to the pixel, and a horizontal displacement slides one off the
+       * other: the ceiling came out visibly warped against the rim it is
+       * supposed to sit inside.
+       *
+       * So the bend fades over the top eighth and the bottom eighth of the
+       * frame. Physically it should not — but what it costs is refraction in
+       * the two bands where there is least to refract, and what it buys is the
+       * seam holding, which is the difference between a tank and a
+       * compositing mistake.
+       */
+      inTank *= smoothstep(0.0, 0.13, vUv.y) * smoothstep(1.0, 0.87, vUv.y);
       vec2 ruv = vec2(vUv.x - bend * inTank, vUv.y);
 
       // ...and the fine distortion, from the bands themselves. Each painted
