@@ -128,25 +128,31 @@ body::before {
    * half — which is also the nicest thing to look at while the animals settle.
    * main.ts adds .ready once the plate is in and the first frames are drawn.
    */
-  opacity: 0;
-  filter: blur(16px) saturate(0.6);
-  transform: scale(1.012);
-  transition: opacity 1.5s ease-out, filter 1.7s ease-out, transform 1.9s ease-out;
   box-shadow:
     0 0 0 1px rgba(150, 190, 225, 0.10),
     0 24px 70px -28px rgba(70, 140, 200, 0.42),
     0 2px 40px -12px rgba(0, 0, 0, 0.9);
 }
 
-.stage.ready {
+/* The fade is on the canvas and not on .stage, because the loader lives inside
+ * .stage — fading the container would take the loader with it, which is the
+ * black rectangle all over again. */
+#app {
+  opacity: 0;
+  filter: blur(16px) saturate(0.6);
+  transform: scale(1.012);
+  transition: opacity 1.5s ease-out, filter 1.7s ease-out, transform 1.9s ease-out;
+}
+
+.stage.ready #app {
   opacity: 1;
   filter: none;
   transform: none;
 }
 
-/* The measure loop must never wait on an animation, and a capture taken
- * during the fade is a capture of the fade. */
-.fit-frame .stage {
+/* The measure loop must never wait on an animation, and a capture taken during
+ * the fade is a capture of the fade. */
+.fit-frame #app {
   opacity: 1;
   filter: none;
   transform: none;
