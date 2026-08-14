@@ -151,51 +151,41 @@ async function main() {
 
   // Only the flood itself, not every patch of that colour.
   //
-  // The hand key ran over parts of the girl — her forearm, a shoulder, some
-  // hair, one sock — which come back 5 to 12 from the key, which is to say they
-  // *are* the flood colour and no threshold can tell them apart from it. What
-  // tells them apart is where they sit: a piece of tank reaches the tank's own
-  // edge, and a hole in the girl does not. So a small island is kept as water
-  // only if it touches the silhouette scripts/geom.js measured — which keeps
-  // the 4,070-px gap between her legs, where the tank really does show through
-  // down to the base, and drops the four islands on her upper body.
+  // The hand key ran over the edges of the girl — antialiased pixels along her
+  // arm, her shoulder, a sock — which come back 5 to 12 from the key, which is
+  // to say they *are* the flood colour and no threshold can tell them apart
+  // from it. What tells them apart is size. The genuine gaps in her silhouette
+  // are big: 4,070 px between her legs, and 629 to 927 px each for the four
+  // openings around her nape and her ponytail, all of which are tank and have
+  // to stay tank. The spill is 700-odd specks, almost all of them under 40 px.
   //
-  // The dropped ones cannot simply be painted: painting them means painting
-  // them *the flood colour*, which is how a magenta patch ended up behind her
-  // hip. They are inpainted from their surroundings instead, below.
-  const nearEdge = (x, y) => {
-    const u = (x - TANK.x0) / TANK.R;
-    if (Math.abs(u) > 0.995) return true;
-    const f = Math.sqrt(Math.max(0, 1 - u * u));
-    return Math.abs(y - (TANK.botYc + TANK.botB * f)) < 12
-        || Math.abs(y - (TANK.topYc + TANK.topB * f)) < 12
-        || Math.abs(Math.abs(x - TANK.x0) - TANK.R) < 12;
-  };
-  const MIN_COMPONENT = W * H * 0.005;
+  // Cutting at 100 px separates the two cleanly — there is nothing between 160
+  // and 629 to argue about. The dropped ones cannot simply be painted: painting
+  // them means painting them *the flood colour*, which is how a magenta patch
+  // ended up behind her hip. They are inpainted from their surroundings below.
+  const MIN_COMPONENT = 100;
   const seen = new Uint8Array(W * H);
   const inpaint = new Uint8Array(W * H);
   let droppedPixels = 0, droppedIslands = 0;
   for (let start = 0; start < W * H; start++) {
     if (!water[start] || seen[start]) continue;
     const stack = [start], component = [];
-    let touchesEdge = false;
     seen[start] = 1;
     while (stack.length) {
       const q = stack.pop();
       component.push(q);
       const x = q % W, y = (q / W) | 0;
-      if (!touchesEdge && nearEdge(x, y)) touchesEdge = true;
       for (const n of [x > 0 ? q - 1 : -1, x < W - 1 ? q + 1 : -1, y > 0 ? q - W : -1, y < H - 1 ? q + W : -1]) {
         if (n >= 0 && water[n] && !seen[n]) { seen[n] = 1; stack.push(n); }
       }
     }
-    if (component.length < MIN_COMPONENT && !touchesEdge) {
+    if (component.length < MIN_COMPONENT) {
       for (const q of component) { water[q] = 0; inpaint[q] = 1; }
       droppedPixels += component.length;
       droppedIslands++;
     }
   }
-  console.log(`components   ${droppedIslands} islands (${droppedPixels} px) inpainted — the hand key over the girl`);
+  console.log(`components   ${droppedIslands} specks (${droppedPixels} px) inpainted — the hand key over the girl's edges`);
 
   // --- the acrylic, separated from the water it is mixed with ---------------
   //
@@ -262,20 +252,15 @@ async function main() {
       r = paint[i * C]; g = paint[i * C + 1]; b = paint[i * C + 2];
       alpha = 1;
     } else {
+      // The artwork's own pixels, unchanged. An earlier version un-mixed them
+      // here — solving C_obs = cover*C_glass + (1-cover)*C_water for the glass
+      // — which is the right thing to do in principle and the wrong thing to do
+      // to a painting: it darkened the acrylic wherever the coverage was
+      // partial, and the whole point of a plate is that the painted pixels
+      // arrive at the screen as painted. Only the alpha is computed.
       const cover = cover2[i];
-      // Un-mix: C_obs = cover*C_glass + (1-cover)*C_water, with C_water taken as
-      // the observed colour scaled to the baseline luminance. The water is one
-      // hue, so a luminance scale describes it and avoids smearing chroma
-      // across the tank.
-      const ar = art.data[i * art.C], ag = art.data[i * art.C + 1], ab = art.data[i * art.C + 2];
-      if (cover > 0.004) {
-        const wScale = base[i] / Math.max(1e-3, opened[i]);
-        const un = (c) => (c - (1 - cover) * c * wScale) / cover;
-        r = un(ar); g = un(ag); b = un(ab);
-        glassPixels++;
-      } else {
-        r = ar; g = ag; b = ab;
-      }
+      r = art.data[i * art.C]; g = art.data[i * art.C + 1]; b = art.data[i * art.C + 2];
+      if (cover > 0.004) glassPixels++;
       alpha = cover;
       punched += 1 - alpha;
     }

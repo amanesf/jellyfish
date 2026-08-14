@@ -33,7 +33,14 @@ const swarm = createSwarm(scene, camera.position);
 
 const postFx = createPostFx(renderer, scene, camera);
 new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}plate.webp`, (texture) => {
-  texture.colorSpace = THREE.SRGBColorSpace;
+  // Sampled raw, *not* as sRGB.
+  //
+  // effects/plateShader.ts runs after OutputPass, so the buffer it blends into
+  // is already display-space sRGB and the plate has to be too. Tagging the
+  // texture SRGBColorSpace makes three.js linearise it on sampling, and the
+  // painting then arrives on screen a stop and a half dark — which is exactly
+  // what it was doing.
+  texture.colorSpace = THREE.NoColorSpace;
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
