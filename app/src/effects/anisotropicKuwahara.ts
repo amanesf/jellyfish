@@ -93,7 +93,14 @@ const FilterShader = {
     tDiffuse: { value: null },
     tTensor: { value: null },
     uTexel: { value: new THREE.Vector2() },
-    uRadius: { value: 4.0 },
+    // Three, not four.
+    //
+    // The kernel is the brush, and a four-pixel brush is wider than a tentacle.
+    // Everything fine in the tank — the threads, the frill on an oral arm, the
+    // canals on a bell — was being averaged into its neighbours, and what came
+    // back was the soft blob the animals had for a silhouette. The mark still
+    // reads as a mark at three, and the strands survive it.
+    uRadius: { value: 3.0 },
     uSharpness: { value: 4.0 },
     uQ: { value: 1.6 },
     uAlpha: { value: 1.0 },

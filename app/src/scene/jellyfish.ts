@@ -356,6 +356,7 @@ const veilVertex = /* glsl */ `
   uniform float uWidth;
   uniform vec3 uCamPos;
   varying float vAlong;
+  varying float vSide;
   varying vec3 vWorld;
 
   void main() {
@@ -367,6 +368,7 @@ const veilVertex = /* glsl */ `
     float w = uWidth * (1.0 - aAlong) * (1.0 - aAlong * 0.4);
     world += side * aSide * w;
     vAlong = aAlong;
+    vSide = aSide;
     vWorld = world;
     gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
   }
@@ -375,6 +377,7 @@ const veilVertex = /* glsl */ `
 const veilFragment = /* glsl */ `
   precision highp float;
   varying float vAlong;
+  varying float vSide;
   varying vec3 vWorld;
   uniform sampler2D uRamp;
   uniform sampler2D uWaterRamp;
@@ -392,7 +395,17 @@ const veilFragment = /* glsl */ `
     // Frilled rather than smooth: the arms in the reference are ruffled sheets,
     // and what reads as ruffle at this size is a fast variation in brightness
     // along the arm, not geometry.
-    float frill = 0.5 + 0.5 * sin(vAlong * 90.0 + vWorld.y * 6.0);
+    // Ruffled across the sheet as well as along it.
+    //
+    // One sine along the arm gives a ribbon with stripes on it. What makes the
+    // reference's oral arms read as a *frill* is that the folds run out to the
+    // edge and the edge is therefore ragged: the sheet is dense where a fold
+    // turns toward you and nearly gone between folds, and both vary across the
+    // width. Two frequencies crossed, and the outer edge of the ribbon weighted
+    // so it is the part that breaks up.
+    float frill = 0.5 + 0.5 * sin(vAlong * 62.0 + vWorld.y * 6.0 + vSide * 2.4);
+    frill *= 0.55 + 0.45 * (0.5 + 0.5 * sin(vAlong * 17.0 - vSide * 5.5));
+    frill = mix(frill, frill * (1.0 - 0.55 * abs(vSide)), uFrill);
     // Kept off the top of the ramp. The veil ramp's last bucket is the
     // brightest thing in the picture by a distance, and the bloom threshold
     // sits below it: an arm crossing a light shaft went to white and smeared a
@@ -433,7 +446,14 @@ const veilFragment = /* glsl */ `
     // wide, and the reference's are the highest-contrast thing in the water
     // after the bells. Giving it the arm's lacy alpha made it disappear
     // entirely, which is why the tank had no threads in it.
-    float lace = 0.16 + 0.34 * frill;
+    // Low, because these overlap.
+    //
+    // Nine wide sheets at half opacity each compose to opaque however lacy any
+    // one of them is: 1 - 0.5^9 is 998 parts in a thousand, and the animal grew
+    // a smooth white sleeve. There are five arms now and each is faint enough
+    // that five of them stacked still show the water. Sharpened as well — the
+    // gaps between folds have to go to *nothing*, or the frill is a stripe.
+    float lace = 0.05 + 0.30 * pow(frill, 2.2);
     float a = uFade * (1.0 - vAlong * 0.72) * mix(0.52, lace, uFrill);
     gl_FragColor = vec4(col, a);
   }
@@ -502,12 +522,17 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   // about 90 px across and its tentacles trail three to four bell widths
   // behind it. The first version's strands were a third of that and read as
   // stubble.
-  const armCount = species === 'bell' ? 6 : 5;
+  // Oral arms: short, wide and many. They were six long thin straps eight bell
+  // radii long, which is a tentacle's shape, not an arm's — in the reference
+  // they are a dense frilled mass hanging a bell-and-a-half below the animal
+  // and half as wide as the bell itself. That mass is most of what a sea nettle
+  // *is* at this size, and the app simply did not have it.
+  const armCount = species === 'bell' ? 5 : 4;
   // The reference's animals trail a *curtain* — twenty-odd threads at least,
   // crossing each other and streaming much further than the bell is wide.
   const tentacleCount = species === 'bell' ? 24 : 28;
-  const armNodes = species === 'bell' ? 20 : 26;
-  const armSegment = size * (species === 'bell' ? 0.42 : 0.68);
+  const armNodes = species === 'bell' ? 15 : 18;
+  const armSegment = size * (species === 'bell' ? 0.155 : 0.24);
   const tentacleNodes = species === 'bell' ? 18 : 24;
   const tentacleSegment = size * (species === 'bell' ? 0.86 : 1.35);
 
@@ -567,7 +592,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         // six-armed animal is a solid mass; the reference's are ribbons a
         // tenth of the bell across, and it is the *number* of them crossing
         // each other that fills the space, not the width of any one.
-        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.15 : 0.09) : size * 0.013 },
+        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.42 : 0.26) : size * 0.013 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },
         uLed: { value: LED },
