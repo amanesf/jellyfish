@@ -159,16 +159,24 @@ const bellFragment = /* glsl */ `
     // running from the crown to the rim — and they are most of what says
     // "jellyfish" rather than "translucent dome" at this size. Counted off the
     // reference: fourteen, fading out toward the crown.
-    float stripes = 0.5 + 0.5 * cos(vAngle * 87.9646);
+    // The radial canals, and they are *dark*.
+    //
+    // They were being added as brightness, which is backwards: in the
+    // reference they are hard thin lines running from the crown to the rim,
+    // darker than the bell they cross, and they are the single most
+    // recognisable thing about the animal. Narrow, too — the line is thin and
+    // the gap between lines is wide, which a plain raised cosine cannot say;
+    // raising it to a power puts the width where the reference has it.
+    float canal = pow(0.5 + 0.5 * cos(vAngle * 87.9646), 5.0);
     // The canals carry a lot more of the bell than they were given. In the
     // reference they are the *structure* of the animal — hard bright lines from
     // the crown to the rim over a saturated ground — and at 0.10 they were a
     // texture you had to look for. The rim is also brighter than the dome: a
     // bell is a thin sheet seen through its own edge there, and that edge is
     // where the reference puts its most saturated orange.
-    float s = 0.26 + 0.40 * top * lit + 0.58 * through * lit + 0.06 * vLobe * vRim
-            + 0.26 * stripes * vRim * vRim
-            + 0.14 * smoothstep(0.72, 1.0, vRim);
+    float s = 0.34 + 0.42 * top * lit + 0.60 * through * lit + 0.08 * vLobe * vRim
+            - 0.30 * canal * smoothstep(0.10, 0.65, vRim)
+            + 0.16 * smoothstep(0.74, 1.0, vRim);
 
     // Coarse on purpose. Four steps, softly joined: precise shading here turns
     // the bell into a glass ball, and the reference's bells are flat masses
@@ -340,7 +348,8 @@ const veilFragment = /* glsl */ `
     // brightest thing in the picture by a distance, and the bloom threshold
     // sits below it: an arm crossing a light shaft went to white and smeared a
     // headlight across the glass. Tissue this thin is bright, not incandescent.
-    float s = 0.30 + 0.34 * lit + uFrill * 0.20 * frill - 0.32 * vAlong;
+    float s = 0.30 + 0.34 * lit + uFrill * 0.20 * frill - 0.32 * vAlong
+            + (1.0 - uFrill) * 0.16;
     float banded = floor(s * 5.0 + 0.5) / 5.0;
     s = clamp(mix(s, banded, 0.4), 0.0, 1.0);
 
@@ -367,7 +376,16 @@ const veilFragment = /* glsl */ `
     // lace edge rather than a painted ribbon, and it is most of the 透明感 the
     // reference has and this did not.
     col *= uLed;
-    float a = uFade * (1.0 - vAlong * 0.72) * (0.16 + 0.34 * frill);
+    // Two different tissues out of one shader.
+    //
+    // An oral arm is a frilled sheet and reads as lace: the ruffle drives its
+    // opacity, dense where it folds and nearly clear between. A tentacle is
+    // not a sheet at all — it is a single fishing line, one or two pixels
+    // wide, and the reference's are the highest-contrast thing in the water
+    // after the bells. Giving it the arm's lacy alpha made it disappear
+    // entirely, which is why the tank had no threads in it.
+    float lace = 0.16 + 0.34 * frill;
+    float a = uFade * (1.0 - vAlong * 0.72) * mix(0.78, lace, uFrill);
     gl_FragColor = vec4(col, a);
   }
 `;
@@ -436,11 +454,13 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   // behind it. The first version's strands were a third of that and read as
   // stubble.
   const armCount = species === 'bell' ? 6 : 5;
-  const tentacleCount = species === 'bell' ? 12 : 16;
+  // The reference's animals trail a *curtain* — twenty-odd threads at least,
+  // crossing each other and streaming much further than the bell is wide.
+  const tentacleCount = species === 'bell' ? 24 : 28;
   const armNodes = species === 'bell' ? 20 : 26;
   const armSegment = size * (species === 'bell' ? 0.42 : 0.68);
   const tentacleNodes = species === 'bell' ? 18 : 24;
-  const tentacleSegment = size * (species === 'bell' ? 0.62 : 1.05);
+  const tentacleSegment = size * (species === 'bell' ? 0.86 : 1.35);
 
   const chains: { chain: Chain; kind: 'arm' | 'tentacle'; anchor: THREE.Vector3 }[] = [];
   const root = new THREE.Vector3();
@@ -501,7 +521,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         uTime: { value: 0 },
         uFlow: { value: 0.5 },
         uFade: { value: 0 },
-        uFrill: { value: kind === 'arm' ? 1 : 0.3 },
+        uFrill: { value: kind === 'arm' ? 1 : 0 },
       },
       vertexShader: veilVertex,
       fragmentShader: veilFragment,

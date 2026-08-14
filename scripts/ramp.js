@@ -74,8 +74,24 @@ async function main() {
     if (!inside[i]) continue;
     const [r, g, b] = px(i);
     const L = lumOf(r, g, b);
-    if (r > g && r > 90) {
-      // The bells: the only warm thing in a picture that is otherwise blue.
+    if (r - b > 90 && r > 140) {
+      // The bells.
+      //
+      // "Warm" is not tight enough, and the ramp it produced was the single
+      // biggest thing wrong with the animals: at `r > g && r > 90` the
+      // population is 54,000 px of everything that leans warm — the vivid
+      // orange bell, the pale pink oral arms, and the wide glow the artist
+      // painted around each animal. Those have *the same luminance* as each
+      // other, so bucketing by luminance averaged orange (255,182,114) with
+      // pale rose (220,190,215) and the ramp came out mauve: 128,91,115 at the
+      // bottom to 248,235,237 at the top, with no orange anywhere in it. Every
+      // bell in the app was pink because the ramp it reads has no other colour
+      // to offer.
+      //
+      // Warmth as a *difference* separates them cleanly. The bell's own body
+      // runs r-b of 150 to 200; the arms and the glow sit under 60. At this
+      // threshold the population is 10,125 px and every quantile of it is
+      // orange, which is what the reference's bells are.
       bell.push([r, g, b, L]);
     } else if (L > 130 && b - r < 90) {
       // The oral arms and tentacles: bright, and far less blue than water of
@@ -112,7 +128,7 @@ async function main() {
 //
 // Populations, and what separates them (scripts/ramp.js):
 //   water  ${String(counts.water).padStart(7)} px  blue and not bright — the tank's own body of water
-//   bell   ${String(counts.bell).padStart(7)} px  warm — the only warm thing in the picture
+//   bell   ${String(counts.bell).padStart(7)} px  strongly warm (r-b>90) — the bells' own body
 //   veil   ${String(counts.veil).padStart(7)} px  bright and not blue — oral arms and tentacles
 //
 // Stored *inverse-tonemapped into linear HDR*: the composer applies ACES at
