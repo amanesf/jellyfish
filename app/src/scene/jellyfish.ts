@@ -198,7 +198,8 @@ const bellFragment = /* glsl */ `
   varying float vLobe;
   varying float vAngle;
 
-  uniform sampler2D uRamp;
+  uniform sampler2D uRamp;      // the pigment: the measured warm population
+  uniform sampler2D uVeilRamp;  // the tissue: the measured pale population
   uniform sampler2D uWaterRamp;
   uniform vec3 uCamPos;
   uniform float uTime;
@@ -271,18 +272,29 @@ const bellFragment = /* glsl */ `
     float banded = floor(s * 5.0 + 0.5) / 5.0;
     s = clamp(mix(s, banded, 0.34), 0.0, 1.0);
 
-    vec3 col = texture2D(uRamp, vec2(s, 0.5)).rgb;
-
-    // The stripes are brown, not merely dark.
+    // Two tissues, and this is what the bell was missing (item 4).
     //
-    // Darkening alone gives a bell with shadows on it; an アカクラゲ's bands are
-    // a *pigment* — reddish brown over a near-colourless bell — so they have to
-    // move the hue, not only the level. Mixed toward the ramp's own deep end
-    // (which is where the measured artwork keeps its saturated orange-browns)
-    // rather than toward a colour invented here, so the animal cannot leave the
-    // measured palette.
-    float mark = canal * smoothstep(0.04, 0.34, vRim);
-    col = mix(col, texture2D(uRamp, vec2(s * 0.30, 0.5)).rgb, mark * 0.62);
+    // The whole dome was one lookup into the bell ramp, which is a measured
+    // population of *saturated orange* pixels — so every bell in the tank came
+    // out a solid orange cap, and an アカクラゲ's bell is not orange. It is
+    // nearly colourless, a faintly pink glass dome, and the colour on it is
+    // sixteen radial brown bands running from the crown to the margin. The
+    // orange in the reference painting *is* those bands, read at a size where
+    // they merge.
+    //
+    // So the ground is the pale-tissue ramp — the same one the oral arms and
+    // the trailing animals are drawn from, which is the right population for
+    // tissue that is tissue — and the bell ramp becomes the pigment laid over
+    // it. Nothing leaves the measured palette; the two measured populations are
+    // simply put where each belongs.
+    vec3 flesh = texture2D(uVeilRamp, vec2(s, 0.5)).rgb;
+    vec3 pigment = texture2D(uRamp, vec2(s, 0.5)).rgb;
+    // The bands, plus the faint overall warmth the bell has between them, plus
+    // the margin: the stripes broaden and run together at the very edge, which
+    // is why an akakurage seen from the side has a dark hem.
+    float mark = canal * smoothstep(0.02, 0.26, vRim);
+    float stain = clamp(0.16 + 0.86 * mark + 0.30 * smoothstep(0.80, 1.0, vRim), 0.0, 1.0);
+    vec3 col = mix(flesh, pigment, stain);
 
     // The wet sheen on the crown.
     //
@@ -378,9 +390,14 @@ class Chain {
   readonly nodes: number;
   readonly segment: number;
 
-  constructor(nodes: number, segment: number, root: THREE.Vector3) {
+  /** Where this strand sits in its own sway cycle. Neighbouring strands must
+   * not agree, or the curtain ripples as one sheet. */
+  readonly sway: number;
+
+  constructor(nodes: number, segment: number, root: THREE.Vector3, sway = 0) {
     this.nodes = nodes;
     this.segment = segment;
+    this.sway = sway;
     this.pos = new Float32Array(nodes * 3);
     this.prev = new Float32Array(nodes * 3);
     for (let i = 0; i < nodes; i++) {
@@ -391,12 +408,26 @@ class Chain {
     this.prev.set(this.pos);
   }
 
-  step(dt: number, root: THREE.Vector3, flow: (x: number, y: number, z: number, out: THREE.Vector3) => void, drag: number) {
+  step(dt: number, time: number, root: THREE.Vector3, flow: (x: number, y: number, z: number, out: THREE.Vector3) => void, drag: number) {
     const f = new THREE.Vector3();
     for (let i = 1; i < this.nodes; i++) {
       const k = i * 3;
       const px = this.pos[k], py = this.pos[k + 1], pz = this.pos[k + 2];
       flow(px, py, pz, f);
+      // A ripple along the strand, and without it every thread in the tank is
+      // straight.
+      //
+      // The curl field is smooth over about a tank radius, which is far longer
+      // than a tentacle: every node of a strand samples very nearly the same
+      // vector, so the whole thing is towed rigidly and forty of them read as a
+      // broom rather than as a curtain. What bends a real one is turbulence at
+      // its own scale — eddies the width of the strand — and that is what this
+      // is: a travelling wave down the chain, out of phase with its neighbours,
+      // growing toward the tip where there is nothing to hold it.
+      const t = i / this.nodes;
+      const w = t * t * 0.55;
+      f.x += Math.sin(time * 1.15 + i * 0.85 + this.sway) * w;
+      f.z += Math.cos(time * 0.93 + i * 0.72 + this.sway * 1.7) * w;
       // Verlet with drag, and a real sag.
       //
       // Gravity here used to be 0.05 against a flow field an order of magnitude
@@ -407,7 +438,7 @@ class Chain {
       // rim and the water bends them, rather than the water carrying them and
       // nothing bending them back.
       const vx = (px - this.prev[k]) * drag + (f.x - 0.0) * dt * dt;
-      const vy = (py - this.prev[k + 1]) * drag + (f.y - 0.75) * dt * dt;
+      const vy = (py - this.prev[k + 1]) * drag + (f.y - 0.52) * dt * dt;
       const vz = (pz - this.prev[k + 2]) * drag + (f.z - 0.0) * dt * dt;
       this.prev[k] = px; this.prev[k + 1] = py; this.prev[k + 2] = pz;
       this.pos[k] = px + vx; this.pos[k + 1] = py + vy; this.pos[k + 2] = pz + vz;
@@ -590,6 +621,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
       uFlow: { value: 0.5 },
       uFade: { value: 0 },
       uRamp: { value: shared.bell },
+      uVeilRamp: { value: shared.veil },
       uLed: { value: LED_JELLY },
       uWaterRamp: { value: shared.water },
       uCamPos: { value: shared.camPos },
@@ -634,7 +666,11 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   const armNodes = species === 'bell' ? 15 : 18;
   const armSegment = size * (species === 'bell' ? 0.155 : 0.24);
   const tentacleNodes = species === 'bell' ? 18 : 24;
-  const tentacleSegment = size * (species === 'bell' ? 0.86 : 1.35);
+  // Shorter than they were. Eighteen nodes at 0.86 bell radii is fifteen radii
+  // of thread, which on the biggest animals reached from the lid of the tank to
+  // the floor: the picture was more tentacle than water. Long is right —
+  // an akakurage trails metres of it — but the tank has to stay a tank.
+  const tentacleSegment = size * (species === 'bell' ? 0.52 : 0.78);
 
   /**
    * Where a strand is attached, as a place *on the bell* rather than as a fixed
@@ -656,7 +692,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
     // Under the crown, inside the skirt — the mouth is at the middle of the
     // underside, not on the rim, so these hang from half way down the dome.
     const angle = i / armCount + rand(seed, 10 + i) * 0.06;
-    chains.push({ chain: new Chain(armNodes, armSegment, root), kind: 'arm', at: { angle, rim: 0.42 } });
+    chains.push({ chain: new Chain(armNodes, armSegment, root, rand(seed, 80 + i) * 6.28), kind: 'arm', at: { angle, rim: 0.42 } });
   }
   for (let i = 0; i < tentacleCount; i++) {
     // Eight clusters, five or so strands each, with the gaps between clusters
@@ -668,7 +704,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
     // which is the single clearest tell that a jellyfish is a simulation: real
     // tentacles are ragged and cross each other.
     const vary = 0.65 + rand(seed, 50 + i) * 0.8;
-    chains.push({ chain: new Chain(tentacleNodes, tentacleSegment * vary, root), kind: 'tentacle', at: { angle, rim: 1 } });
+    chains.push({ chain: new Chain(tentacleNodes, tentacleSegment * vary, root, rand(seed, 90 + i) * 6.28), kind: 'tentacle', at: { angle, rim: 1 } });
   }
 
   // One ribbon mesh for the arms and one for the tentacles, so the whole
@@ -821,7 +857,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
       for (const c of chains) {
         rimPoint(c.at.angle, phase, seedAngle, time, activity, c.at.rim, anchor);
         anchor.multiplyScalar(size).applyQuaternion(group.quaternion).add(jelly.position);
-        c.chain.step(dt, anchor, flowField, c.kind === 'arm' ? 0.90 : 0.94);
+        c.chain.step(dt, time, anchor, flowField, c.kind === 'arm' ? 0.90 : 0.94);
       }
 
       // Copy the chains into the ribbon meshes.
