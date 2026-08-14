@@ -242,6 +242,30 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
         }
       }
 
+      // They keep out of each other's way.
+      //
+      // Without this the tank clumps, and it clumps worse now that nothing
+      // dies: the flow is slow and divergence-free, but it still has slack
+      // regions, and given ten minutes every animal finds one — a picture of
+      // eight jellyfish with six of them in the same corner. Real ones do not
+      // stack up either, and the reason is the same as the reason this works:
+      // an animal displaces water, so the water between two of them pushes
+      // them apart. Quadratic in the population, which is at most twenty.
+      for (let a = 0; a < members.length; a++) {
+        const ja = members[a].jelly;
+        for (let b = a + 1; b < members.length; b++) {
+          const jb = members[b].jelly;
+          tmp.subVectors(ja.position, jb.position);
+          const reach = (ja.size + jb.size) * 3.4;
+          const d = tmp.length();
+          if (d > reach || d < 1e-5) continue;
+          const push = (1 - d / reach) * 0.55 * dt;
+          tmp.multiplyScalar(push / d);
+          ja.velocity.add(tmp);
+          jb.velocity.sub(tmp);
+        }
+      }
+
       for (let i = members.length - 1; i >= 0; i--) {
         const m = members[i];
         const j = m.jelly;

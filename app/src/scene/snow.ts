@@ -33,7 +33,13 @@ export function createSnow(camPos: THREE.Vector3): Snow {
     const r = Math.sqrt(PIPE_RADIUS * PIPE_RADIUS + t * (0.94 * 0.94 - PIPE_RADIUS * PIPE_RADIUS));
     const a = i * 2.399963; // golden angle
     position[i * 3] = Math.cos(a) * r;
-    position[i * 3 + 1] = ((i * 0.6180339887) % 1) * TANK_HEIGHT;
+    // Height from a hash, not from a second irrational rotation. The golden
+    // angle in x/z and a golden-ratio walk in y stay in step with each other:
+    // motes at a similar height end up at a similar bearing, and the field
+    // grows a dense bank that catches a light shaft and reads as a cloud of
+    // steam near the top of the tank. Decorrelating the axis kills it.
+    const h = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+    position[i * 3 + 1] = (h - Math.floor(h)) * TANK_HEIGHT;
     position[i * 3 + 2] = Math.sin(a) * r;
     seedAttr[i] = t;
   }
@@ -88,8 +94,22 @@ export function createSnow(camPos: THREE.Vector3): Snow {
         float r = dot(d, d);
         if (r > 0.25) discard;
         float soft = 1.0 - smoothstep(0.05, 0.25, r);
-        vec3 col = texture2D(uRamp, vec2(clamp(0.55 + vLit * 0.5, 0.0, 1.0), 0.5)).rgb;
-        gl_FragColor = vec4(col * (1.4 + vLit), soft * (0.25 + 0.55 * vLit));
+        // White, not blue.
+        //
+        // These used to be tinted with the water ramp, on the reasoning that a
+        // mote is lit by the same water everything else is — which is true of
+        // the light reaching it and false of the mote itself. Marine snow is
+        // detritus: it is achromatic, and against a blue field it reads *warm*.
+        // Painted in the water's own blue it disappeared into the water, and
+        // the tank lost the one thing that says there is a volume of water
+        // between the eye and the far wall rather than a painted surface. The
+        // reference has hundreds of them and they are the brightest small
+        // thing in the frame.
+        vec3 col = mix(vec3(0.62, 0.78, 0.95), vec3(1.0, 0.99, 0.96), vLit);
+        // Additive, so the brightness is capped rather than left to the shaft:
+        // where a beam crosses a dense patch the sum ran past white and the
+        // patch stopped being made of motes.
+        gl_FragColor = vec4(col * min(1.7, 0.9 + 1.5 * vLit), soft * (0.30 + 0.52 * vLit));
       }
     `,
     transparent: true,

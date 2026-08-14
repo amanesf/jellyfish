@@ -158,8 +158,15 @@ const bellFragment = /* glsl */ `
     // "jellyfish" rather than "translucent dome" at this size. Counted off the
     // reference: fourteen, fading out toward the crown.
     float stripes = 0.5 + 0.5 * cos(vAngle * 87.9646);
-    float s = 0.30 + 0.42 * top * lit + 0.55 * through * lit + 0.06 * vLobe * vRim
-            + 0.10 * stripes * vRim * vRim;
+    // The canals carry a lot more of the bell than they were given. In the
+    // reference they are the *structure* of the animal — hard bright lines from
+    // the crown to the rim over a saturated ground — and at 0.10 they were a
+    // texture you had to look for. The rim is also brighter than the dome: a
+    // bell is a thin sheet seen through its own edge there, and that edge is
+    // where the reference puts its most saturated orange.
+    float s = 0.26 + 0.40 * top * lit + 0.58 * through * lit + 0.06 * vLobe * vRim
+            + 0.26 * stripes * vRim * vRim
+            + 0.14 * smoothstep(0.72, 1.0, vRim);
 
     // Coarse on purpose. Four steps, softly joined: precise shading here turns
     // the bell into a glass ball, and the reference's bells are flat masses
@@ -172,11 +179,23 @@ const bellFragment = /* glsl */ `
     // The water in front of it. Same ramp, same shafts as scene/water.ts, so a
     // jellyfish deep in the tank sits *in* the water rather than on top of it.
     float dist = length(uCamPos - vWorld);
-    float veil = 1.0 - exp(-max(0.0, dist - 5.2) * 0.30);
+    // Veiled by depth, but the tank is only two radii deep and the veil was
+    // eating four fifths of an animal at the back wall — which is most of the
+    // population, and it is why the tank read as a painted blue surface with a
+    // couple of smudges on it. Water this clear does not do that: the reference
+    // shows its far animals plainly, dimmer and bluer but *there*.
+    float veil = 1.0 - exp(-max(0.0, dist - 5.6) * 0.24);
     float ws = clamp(descent(vWorld.y) * shaft(vWorld, uTime, uFlow) * 1.3, 0.0, 1.0);
-    col = mix(col, texture2D(uWaterRamp, vec2(ws, 0.5)).rgb, veil * 0.82);
+    col = mix(col, texture2D(uWaterRamp, vec2(ws, 0.5)).rgb, veil * 0.58);
 
-    gl_FragColor = vec4(col, uFade);
+    // Translucent, and translucent the way a bell is: a thin dome seen through
+    // its own thickness. Face-on you are looking through one sheet and the
+    // water behind shows; at the silhouette the sight-line runs along the sheet
+    // and it goes solid, which is exactly where the reference's bells carry
+    // their most saturated orange. Drawn opaque — which is what this was — a
+    // bell is a plastic toy in the water rather than a thing made of water.
+    float body = 0.30 + 0.50 * facing + 0.24 * smoothstep(0.62, 1.0, vRim);
+    gl_FragColor = vec4(col, uFade * clamp(body, 0.0, 1.0));
   }
 `;
 
@@ -315,13 +334,27 @@ const veilFragment = /* glsl */ `
 
     vec3 col = texture2D(uRamp, vec2(s, 0.5)).rgb;
     float dist = length(uCamPos - vWorld);
-    float veil = 1.0 - exp(-max(0.0, dist - 5.2) * 0.30);
+    // Veiled by depth, but the tank is only two radii deep and the veil was
+    // eating four fifths of an animal at the back wall — which is most of the
+    // population, and it is why the tank read as a painted blue surface with a
+    // couple of smudges on it. Water this clear does not do that: the reference
+    // shows its far animals plainly, dimmer and bluer but *there*.
+    float veil = 1.0 - exp(-max(0.0, dist - 5.6) * 0.24);
     float ws = clamp(lit * 1.3, 0.0, 1.0);
-    col = mix(col, texture2D(uWaterRamp, vec2(ws, 0.5)).rgb, veil * 0.82);
+    col = mix(col, texture2D(uWaterRamp, vec2(ws, 0.5)).rgb, veil * 0.58);
 
-    // Thin tissue: it fades out along its length, and it never fully hides the
-    // water behind it.
-    float a = uFade * (1.0 - vAlong * 0.75) * 0.92;
+    // Thin tissue, and *thin* is the word the last version did not honour: at
+    // 0.92 an oral arm was an opaque tube, and six of them made a solid white
+    // sausage hanging off a solid pink dome. An oral arm is a frilled sheet one
+    // cell thick. You see the water through it, you see the animal's own other
+    // arms through it, and the ruffles are what little of it is dense enough to
+    // read at all.
+    //
+    // So the frill drives the *opacity* and not only the tone: dense where the
+    // sheet folds back on itself, nearly clear between. That is what makes a
+    // lace edge rather than a painted ribbon, and it is most of the 透明感 the
+    // reference has and this did not.
+    float a = uFade * (1.0 - vAlong * 0.72) * (0.16 + 0.34 * frill);
     gl_FragColor = vec4(col, a);
   }
 `;
@@ -442,7 +475,11 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
     geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 40);
     const material = new THREE.ShaderMaterial({
       uniforms: {
-        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.34 : 0.20) : size * 0.035 },
+        // Slender. The arms were a third of a bell radius wide, which on a
+        // six-armed animal is a solid mass; the reference's are ribbons a
+        // tenth of the bell across, and it is the *number* of them crossing
+        // each other that fills the space, not the width of any one.
+        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.15 : 0.09) : size * 0.022 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },
         uWaterRamp: { value: shared.water },
