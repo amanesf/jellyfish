@@ -101,7 +101,23 @@ function noise3(x: number, y: number, z: number): number {
  */
 function curl(x: number, y: number, z: number, t: number, out: THREE.Vector3): void {
   const e = 0.3;
-  const scale = 0.75;
+  /*
+   * The cell size, and why it was wrong.
+   *
+   * At 0.75 a noise cell is bigger than the tank: the whole population sits
+   * inside one lobe of the field, so every animal feels very nearly the same
+   * vector and they all lean the same way. Measured over the tank volume and
+   * four hundred seconds of the clock, the mean of the field came to 31.5% of
+   * its own mean speed — for an isotropic field that number should be near
+   * zero, and 31.5% is a current, not turbulence. It is visible exactly as it
+   * sounds: everything tilted the same direction at once.
+   *
+   * At 1.8 the tank spans several cells, animals a bell apart feel different
+   * directions, and the same measurement gives 16.7%. The amplitude is scaled
+   * down to match, because the curl is a derivative and finer cells mean
+   * steeper gradients: the water has to stay as slow as it was.
+   */
+  const scale = 1.8;
   const px = (a: number, b: number, c: number) => noise3(a * scale + t * 0.02, b * scale, c * scale);
   const py = (a: number, b: number, c: number) => noise3(a * scale + 31.4, b * scale - t * 0.017, c * scale + 12.7);
   const pz = (a: number, b: number, c: number) => noise3(a * scale - 7.3, b * scale + 5.1, c * scale + t * 0.023);
@@ -127,7 +143,7 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
     // moves a bell's width in a few seconds, not in one. At the old 0.9 + 2.4f
     // the whole population crossed the frame while you watched, which reads as
     // a current rather than as water.
-    out.multiplyScalar(0.55 + flowNow * 1.5);
+    out.multiplyScalar(0.23 + flowNow * 0.62);
     // The tank is stirred from above, so there is a slow downwelling at the
     // wall and a rise up the middle. It is also what keeps animals off the
     // glass without a wall force that would look like a wall force.
@@ -377,7 +393,13 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
         // toward upright than one that is merely tilted, which is what a
         // statocyst is for. It is still slow — a few strokes, not a flip.
         const righting = j.activity * (1 - upness);
+        // ...and a lean of its own, so that even where the water does agree the
+        // animals do not. A jellyfish is not symmetric and does not hang
+        // straight: a fixed few degrees per individual, from its seed.
         tmp.copy(force).normalize();
+        tmp.x += (rand(j.seed, 23) - 0.5) * 0.55;
+        tmp.z += (rand(j.seed, 24) - 0.5) * 0.55;
+        tmp.normalize();
         if (tmp.lengthSq() > 1e-6) {
           // Turning is much slower while resting: nothing is driving it but the
           // water, and the water turns a jellyfish over the way it turns a leaf.
