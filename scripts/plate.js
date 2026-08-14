@@ -272,6 +272,25 @@ async function main() {
   }
   const cover2 = blurXY(coverage, W, H, 13);
 
+  // --- the artwork's own jellyfish, taken out of the glass -------------------
+  //
+  // Everything inside the flood is drawn from the *artwork*, at the acrylic's
+  // coverage — and the artwork still has the painted jellyfish in it. At
+  // alpha 0.05 to 0.36 they are faint, but they are there, and they do not
+  // move: a stationary ghost of a jellyfish sat in the top middle of the frame
+  // while the live ones swam past behind it. Everything the plate contributes
+  // inside the tank is meant to be the *glass*, which has no animals on it.
+  //
+  // Removed the same way the coverage baseline removes them: a grey-scale
+  // opening wider than any bell, per channel, then a softening. The acrylic's
+  // broad vertical bands and the water's own vertical gradient survive a
+  // 26 px opening; a jellyfish does not.
+  const glassRGB = [0, 1, 2].map((k) => {
+    const ch = new Float32Array(W * H);
+    for (let i = 0; i < W * H; i++) ch[i] = art.data[i * art.C + k];
+    return blurXY(open(ch, W, H, 26), W, H, 9);
+  });
+
   // The sparkle on the floor by her right shoe. It is a decoration the artwork
   // came with, not part of the room, and it is the one thing in the frame that
   // has no business being in a photograph of an aquarium. Detected rather than
@@ -383,9 +402,9 @@ async function main() {
       const front = despill(unmix(i, a), i);
       const back = a + (1 - a) * cover;
       alpha = back;
-      r = (a * front[0] + (1 - a) * cover * art.data[i * art.C]) / alpha;
-      g = (a * front[1] + (1 - a) * cover * art.data[i * art.C + 1]) / alpha;
-      b = (a * front[2] + (1 - a) * cover * art.data[i * art.C + 2]) / alpha;
+      r = (a * front[0] + (1 - a) * cover * glassRGB[0][i]) / alpha;
+      g = (a * front[1] + (1 - a) * cover * glassRGB[1][i]) / alpha;
+      b = (a * front[2] + (1 - a) * cover * glassRGB[2][i]) / alpha;
       punched += 1 - alpha;
       softPixels++;
     } else if (a >= 1) {
@@ -400,7 +419,7 @@ async function main() {
       // partial, and the whole point of a plate is that the painted pixels
       // arrive at the screen as painted. Only the alpha is computed.
       const cover = cover2[i];
-      r = art.data[i * art.C]; g = art.data[i * art.C + 1]; b = art.data[i * art.C + 2];
+      r = glassRGB[0][i]; g = glassRGB[1][i]; b = glassRGB[2][i];
       if (cover > 0.004) glassPixels++;
       alpha = cover;
       punched += 1 - alpha;
