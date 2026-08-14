@@ -43,7 +43,7 @@ const TANK = tank();
 const KEY = [152, 59, 114];
 
 /**
- * Everything within this distance of the key is water.
+ * The band the key softens across.
  *
  * Tight, and it has to be, because of her hair. The ponytail runs from silver
  * through peach to pink, and pink hair is *near* the flood: sampled through the
@@ -52,11 +52,26 @@ const KEY = [152, 59, 114];
  * comfortable — the 60 this started at, let alone sakura's 105 — eats the
  * strands and hands back a ponytail full of ragged holes.
  *
- * The flood is a single flat colour, so it does not need any room; what needs
- * room is the antialiased boundary between it and everything else, and that is
- * handled by the fringe pass below rather than by widening this.
+ * Not a threshold — a ramp, and the difference is the whole of the girl's
+ * outline. A threshold gives every pixel alpha 0 or alpha 1, so her silhouette
+ * arrives at the screen as a one-bit staircase: the ジャギジャギ edge down her
+ * arm, her hip and her ponytail. She was drawn with an antialiased outline, and
+ * an antialiased outline is a *coverage* measurement — pixels that are part her
+ * and part flood, at every fraction in between. Reading that fraction back is
+ * what the ramp does.
+ *
+ * Below KEY_IN the pixel is flood; above KEY_OUT it is paint; between them the
+ * position in the band is the paint's coverage. The old cut of 26 sits in the
+ * middle of it, so nothing about *which* side of the argument a pixel lands on
+ * has changed — only that the ones in the band now arrive as partial coverage
+ * instead of being rounded. Her hair is still far outside: the strands sample
+ * 55 to 110 and the flood between them under 12.
  */
-const KEY_TOLERANCE = 26;
+const KEY_IN = 16, KEY_OUT = 36;
+/** The cut, where a pixel is more flood than paint. Everything that reasons
+ * about the matte as a region — the connected components, the geometry check —
+ * uses this; only the compositing uses the ramp. */
+const KEY_TOLERANCE = (KEY_IN + KEY_OUT) / 2;
 
 const dist = (r, g, b) => Math.hypot(r - KEY[0], g - KEY[1], b - KEY[2]);
 
@@ -144,60 +159,48 @@ async function main() {
   if (art.W !== W || art.H !== H) throw new Error('the keyed file and the artwork are different sizes');
 
   // --- the matte, from the hand key -----------------------------------------
+  //
+  // `paintCover` is the fraction of the pixel that is picture rather than
+  // flood, read off the ramp; `water` is the same thing rounded, for everything
+  // downstream that needs a region rather than a coverage.
+  const paintCover = new Float32Array(W * H);
   const water = new Uint8Array(W * H);
   for (let i = 0; i < W * H; i++) {
-    if (dist(keyed.data[i * C], keyed.data[i * C + 1], keyed.data[i * C + 2]) < KEY_TOLERANCE) water[i] = 1;
+    const d = dist(keyed.data[i * C], keyed.data[i * C + 1], keyed.data[i * C + 2]);
+    paintCover[i] = Math.min(1, Math.max(0, (d - KEY_IN) / (KEY_OUT - KEY_IN)));
+    if (d < KEY_TOLERANCE) water[i] = 1;
   }
 
-  // --- the fringe -----------------------------------------------------------
+  // --- the spill, unmixed out of the edge -----------------------------------
   //
   // A hand key over an antialiased edge leaves a band of pixels that are part
-  // flood and part girl. At a threshold of 60 the ones past halfway are called
-  // water, so the matte eats about a pixel into her all the way round — which
-  // on screen is a magenta seam tracing her legs, her sleeve and every fold of
-  // her trousers. It reads as her being full of holes, and no threshold fixes
-  // it: moving the cut just moves which half of the band is wrong.
+  // flood and part girl, and their colour is the mixture: her skin pulled
+  // toward magenta. Whatever the matte does with them, painting them as
+  // observed puts a pink seam all the way round her.
   //
-  // So the band is taken out of the argument. The water is pulled back a pixel,
-  // and every pixel next to it carrying a magenta cast — (r+b)/2 - g well above
-  // what anything in this picture has of its own — is inpainted from its clean
-  // neighbours. Her outline ends up painted in her own colours, and the water
-  // starts just outside it.
-  const cast = (i) => (keyed.data[i * C] + keyed.data[i * C + 2]) / 2 - keyed.data[i * C + 1];
-  const fringe = new Uint8Array(W * H);
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const i = y * W + x;
-      if (water[i]) continue;
-      let nearWater = false;
-      for (let dy = -2; dy <= 2 && !nearWater; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
-          const xx = x + dx, yy = y + dy;
-          if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
-          if (water[yy * W + xx]) { nearWater = true; break; }
-        }
-      }
-      if (nearWater && cast(i) > 28) fringe[i] = 1;
+  // The band used to be taken out of the argument entirely — the water pulled
+  // back a pixel and anything with a magenta cast inpainted from its
+  // neighbours. That removes the seam by removing the edge: it fills her
+  // outline with a guess and leaves the matte one-bit, which is the staircase.
+  //
+  // The mixture is a two-colour one and the key colour is known, so it can
+  // simply be solved instead. Each pixel is C_obs = a*C_paint + (1-a)*KEY with
+  // a already measured above, so C_paint = (C_obs - (1-a)*KEY) / a. The edge
+  // comes back in her own colours, at its own coverage, and the flood behind it
+  // is gone rather than averaged away — which is what an antialiased edge over
+  // the live water needs to be.
+  //
+  // This is the unmixing the acrylic explicitly does *not* get (see below), and
+  // the difference is that here the background is a flat colour that is not in
+  // the painting, while there it is water the painter painted.
+  const unmix = (i, a) => {
+    const out = [0, 0, 0];
+    for (let k = 0; k < 3; k++) {
+      const v = (keyed.data[i * C + k] - (1 - a) * KEY[k]) / a;
+      out[k] = Math.min(255, Math.max(0, v));
     }
-  }
-  // ...and the outermost ring of the water itself, which is the other half of
-  // the same band.
-  const eroded = new Uint8Array(water);
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const i = y * W + x;
-      if (!water[i]) continue;
-      for (const q of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
-        if (q >= 0 && !water[q]) { eroded[i] = 0; break; }
-      }
-    }
-  }
-  let fringePixels = 0;
-  for (let i = 0; i < W * H; i++) {
-    if (water[i] && !eroded[i]) { water[i] = 0; fringe[i] = 1; }
-    if (fringe[i]) fringePixels++;
-  }
-  console.log(`fringe       ${fringePixels} px of half-keyed edge inpainted`);
+    return out;
+  };
 
   // Only the flood itself, not every patch of that colour.
   //
@@ -215,7 +218,7 @@ async function main() {
   // ended up behind her hip. They are inpainted from their surroundings below.
   const MIN_COMPONENT = 100;
   const seen = new Uint8Array(W * H);
-  const inpaint = Uint8Array.from(fringe);
+  const inpaint = new Uint8Array(W * H);
   let droppedPixels = 0, droppedIslands = 0;
   for (let start = 0; start < W * H; start++) {
     if (!water[start] || seen[start]) continue;
@@ -230,7 +233,7 @@ async function main() {
       }
     }
     if (component.length < MIN_COMPONENT) {
-      for (const q of component) { water[q] = 0; inpaint[q] = 1; }
+      for (const q of component) { water[q] = 0; paintCover[q] = 1; inpaint[q] = 1; }
       droppedPixels += component.length;
       droppedIslands++;
     }
@@ -295,6 +298,52 @@ async function main() {
 
   // Fill the dropped islands from their surroundings, one dilation at a time,
   // so what shows there is her skin and her sock rather than the key.
+  // --- the spill that is past unmixing --------------------------------------
+  //
+  // Unmixing handles the pixels the ramp calls partial. It is not the whole of
+  // the spill: measured on the keyed file, the magenta cast (r+b)/2 - g runs
+  // to a median of 38.5 in the first two pixels outside the matte and 16 in the
+  // next two, against 4 in the picture at large. That is the flood glowing
+  // several pixels into her through the source's own soft edges and its PNG
+  // re-encoding, and no threshold on distance-to-key can reach it: those pixels
+  // sit 60 to 90 from the key, which is where her pink hair also lives.
+  //
+  // So it is taken off by *distance to the matte* instead, and only the excess
+  // is taken. The cap is the picture's own: away from the water 99.5% of pixels
+  // are under a cast of 22.5, so anything above that within a couple of pixels
+  // of the flood is the flood. Her hair keeps every bit of pink it has anywhere
+  // else in the frame.
+  const distToWater = new Int16Array(W * H).fill(999);
+  for (let i = 0; i < W * H; i++) if (water[i]) distToWater[i] = 0;
+  for (let r = 1; r <= 4; r++) {
+    const ring = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (distToWater[i] !== 999) continue;
+        for (const q of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
+          if (q >= 0 && distToWater[q] === r - 1) { ring.push(i); break; }
+        }
+      }
+    }
+    for (const i of ring) distToWater[i] = r;
+  }
+  /** Cast the picture is allowed to have at each distance from the flood. */
+  const CAST_CAP = [14, 14, 16, 20, 26];
+  let despilled = 0;
+  const despill = (rgb, i) => {
+    const d = distToWater[i];
+    if (d > 4) return rgb;
+    const excess = (rgb[0] + rgb[2]) / 2 - rgb[1] - CAST_CAP[d];
+    if (excess <= 0) return rgb;
+    despilled++;
+    return [Math.max(0, rgb[0] - excess), rgb[1], Math.max(0, rgb[2] - excess)];
+  };
+
+  // Which pixels were filled, kept because the fill loop clears the flag as it
+  // goes: a filled pixel is fully painted whatever its coverage measured, since
+  // what it measured was the key running over her.
+  const inpaintedAt = Uint8Array.from(inpaint);
   const paint = Buffer.from(keyed.data);
   for (let pass = 0; pass < 40; pass++) {
     let filled = 0;
@@ -304,7 +353,9 @@ async function main() {
       const x = i % W, y = (i / W) | 0;
       let r = 0, g = 0, b = 0, n = 0;
       for (const q of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
-        if (q < 0 || inpaint[q] || water[q]) continue;
+        // Fully painted neighbours only. A pixel still carrying part of the
+        // flood would spread the very colour this is removing.
+        if (q < 0 || inpaint[q] || paintCover[q] < 1) continue;
         r += paint[q * C]; g += paint[q * C + 1]; b += paint[q * C + 2]; n++;
       }
       if (n) todo.push([i, r / n, g / n, b / n]);
@@ -318,12 +369,28 @@ async function main() {
   }
 
   const rgba = Buffer.alloc(W * H * 4);
-  let punched = 0, glassPixels = 0;
+  let punched = 0, glassPixels = 0, softPixels = 0;
   for (let i = 0; i < W * H; i++) {
     let r, g, b, alpha;
-    if (!water[i]) {
+    const a = inpaintedAt[i] ? 1 : paintCover[i];
+    if (a > 0 && a < 1) {
+      // Her outline. Two layers over one pixel: the picture at coverage `a`,
+      // and behind it the water showing through the rest, itself veiled by
+      // whatever acrylic stands there. Composited in that order and stored
+      // straight (un-premultiplied), because effects/plateShader.ts mixes with
+      // the plate's alpha rather than adding a premultiplied colour.
+      const cover = cover2[i];
+      const front = despill(unmix(i, a), i);
+      const back = a + (1 - a) * cover;
+      alpha = back;
+      r = (a * front[0] + (1 - a) * cover * art.data[i * art.C]) / alpha;
+      g = (a * front[1] + (1 - a) * cover * art.data[i * art.C + 1]) / alpha;
+      b = (a * front[2] + (1 - a) * cover * art.data[i * art.C + 2]) / alpha;
+      punched += 1 - alpha;
+      softPixels++;
+    } else if (a >= 1) {
       // Painted. From the keyed file, which is the only one the girl is in.
-      r = paint[i * C]; g = paint[i * C + 1]; b = paint[i * C + 2];
+      [r, g, b] = despill([paint[i * C], paint[i * C + 1], paint[i * C + 2]], i);
       alpha = 1;
     } else {
       // The artwork's own pixels, unchanged. An earlier version un-mixed them
@@ -347,6 +414,8 @@ async function main() {
   console.log(`keyed        ${(100 * water.reduce((a, b) => a + b, 0) / (W * H)).toFixed(1)}% of the frame is water`);
   console.log(`punched      ${(100 * punched / (W * H)).toFixed(1)}% fully open`);
   console.log(`part-alpha   ${(100 * glassPixels / (W * H)).toFixed(1)}% carries acrylic`);
+  console.log(`soft edge    ${softPixels} px of antialiased outline unmixed off the key`);
+  console.log(`despill      ${despilled} px within 4 px of the matte had the flood's cast taken off`);
 
   // A sanity check against the measured geometry, not a matte: if the hand key
   // and scripts/geom.js disagree about where the tank is, one of them is

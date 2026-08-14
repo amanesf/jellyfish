@@ -136,15 +136,33 @@ ${table(ramps.veil)}
 function rampTexture(hdr: Float32Array): THREE.DataTexture {
   // RGBA rather than RGB: three.js dropped RGBFormat, and WebGL2 will not take
   // a three-channel float texture anyway.
+  //
+  // **Half** float, and this is the one line standing between the app and a
+  // black tank on a phone. Every colour in the picture is a lookup into one of
+  // these ramps, so if the lookup returns nothing the whole scene returns
+  // nothing — which is exactly what it did: water, bells and veils all at zero,
+  // with only the additive rim of a jellyfish left faintly visible.
+  //
+  // RGBA32F is *not* a filterable format in WebGL2. Sampling one with
+  // LinearFilter needs OES_texture_float_linear, which desktop drivers all
+  // happen to have and Chrome on Android generally does not; where it is
+  // missing the texture is incomplete and every fetch reads black. Nothing in
+  // the console says so, and it cannot reproduce on a desktop or in
+  // scripts/capture.js's swiftshader, which is why it survived this long.
+  //
+  // RGBA16F *is* filterable in core WebGL2, everywhere. The ramps are authored
+  // in pre-tonemap linear and top out at 6.14, where half float still carries
+  // about three decimal digits — far finer than the 8-bit sRGB the values were
+  // measured from.
   const n = hdr.length / 3;
-  const rgba = new Float32Array(n * 4);
+  const rgba = new Uint16Array(n * 4);
   for (let i = 0; i < n; i++) {
-    rgba[i * 4] = hdr[i * 3];
-    rgba[i * 4 + 1] = hdr[i * 3 + 1];
-    rgba[i * 4 + 2] = hdr[i * 3 + 2];
-    rgba[i * 4 + 3] = 1;
+    rgba[i * 4] = THREE.DataUtils.toHalfFloat(hdr[i * 3]);
+    rgba[i * 4 + 1] = THREE.DataUtils.toHalfFloat(hdr[i * 3 + 1]);
+    rgba[i * 4 + 2] = THREE.DataUtils.toHalfFloat(hdr[i * 3 + 2]);
+    rgba[i * 4 + 3] = THREE.DataUtils.toHalfFloat(1);
   }
-  const tex = new THREE.DataTexture(rgba, n, 1, THREE.RGBAFormat, THREE.FloatType);
+  const tex = new THREE.DataTexture(rgba, n, 1, THREE.RGBAFormat, THREE.HalfFloatType);
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.wrapS = THREE.ClampToEdgeWrapping;
