@@ -291,7 +291,18 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
         // animal surged on a beat its bell was not keeping, and it surged
         // straight through the rests.
         tmp.set(0, 1, 0).applyQuaternion(j.group.quaternion);
-        j.velocity.addScaledVector(tmp, j.thrust * dt * j.size * 1.5);
+        // An upside-down animal does not drive itself into the floor.
+        //
+        // Letting them turn over (item 6) had a consequence: an inverted one
+        // still pushed along its own axis, which now pointed down, so over a
+        // few minutes the whole population swam itself into the bottom of the
+        // tank. A real jellyfish inverted does not get thrust out of a stroke
+        // either — it has statocysts, it knows which way up it is, and what a
+        // stroke buys it in that attitude is a *righting* turn rather than
+        // travel. So thrust falls away as the bell tips past horizontal, and
+        // what is left of the stroke goes into standing back up (below).
+        const upness = tmp.y * 0.5 + 0.5;
+        j.velocity.addScaledVector(tmp, j.thrust * dt * j.size * 1.5 * (0.18 + 0.82 * upness));
 
         flowField(j.position.x, j.position.y, j.position.z, force);
         j.velocity.addScaledVector(force, dt * 0.55);
@@ -326,11 +337,15 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
          */
         const keel = 0.85 - 1.2 * (0.5 + 0.5 * Math.sin(time * 0.021 + rand(j.seed, 21) * 6.28))
                      * (1 - j.activity) * (0.35 + rand(j.seed, 22) * 0.75);
+        // Righting: a swimming animal that finds itself over pulls harder
+        // toward upright than one that is merely tilted, which is what a
+        // statocyst is for. It is still slow — a few strokes, not a flip.
+        const righting = j.activity * (1 - upness);
         tmp.copy(force).normalize();
         if (tmp.lengthSq() > 1e-6) {
           // Turning is much slower while resting: nothing is driving it but the
           // water, and the water turns a jellyfish over the way it turns a leaf.
-          tmp.lerp(up, Math.max(-1, Math.min(1, keel)));
+          tmp.lerp(up, Math.max(-1, Math.min(1, keel + righting)));
           if (tmp.lengthSq() > 1e-6) {
             q.setFromUnitVectors(up, tmp.normalize());
             j.group.quaternion.slerp(q, 1 - Math.pow(0.55, dt * (0.25 + 0.75 * j.activity)));

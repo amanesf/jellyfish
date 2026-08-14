@@ -293,8 +293,60 @@ const bellFragment = /* glsl */ `
     // the margin: the stripes broaden and run together at the very edge, which
     // is why an akakurage seen from the side has a dark hem.
     float mark = canal * smoothstep(0.02, 0.26, vRim);
-    float stain = clamp(0.16 + 0.86 * mark + 0.30 * smoothstep(0.80, 1.0, vRim), 0.0, 1.0);
+
+    /*
+     * The animal's insides, which it had none of.
+     *
+     * A scyphozoan bell is not a coloured shell — it is a transparent dome with
+     * organs suspended under it, and on an akakurage you can see all of them
+     * through it. Three, and they are what the bell was missing:
+     *
+     *  - the **stomach**, four gastric pouches around the mouth. They sit under
+     *    the middle of the bell, they are the densest thing in the animal, and
+     *    they are why the crown of a real one is not its palest part.
+     *  - the **gonads**, four horseshoes following the outer edge of those
+     *    pouches, at about half way out. These are the strongest markings on
+     *    the animal after the stripes, and on a mature one they are what the
+     *    eye actually reads as "jellyfish" from across a room.
+     *  - the **rhopalia**, the eight sense organs at the margin, one in each
+     *    notch between two clusters of tentacles. Tiny, dark, and the reason
+     *    the rim is not an even scallop.
+     *
+     * All four-fold, all keyed off the same angle the stripes are, so they line
+     * up with the quadrants of the animal the way they do on the real one.
+     */
+    float quad = cos(vAngle * 25.1327);            // four, around the bell
+    float pouch = smoothstep(0.30, 0.0, vRim) * (0.45 + 0.55 * smoothstep(-0.2, 0.9, quad));
+    // A horseshoe: an arc of a ring, open toward the middle of each quadrant.
+    float ring = exp(-pow((vRim - 0.46) / 0.11, 2.0));
+    float gonad = ring * smoothstep(-0.15, 0.75, quad);
+    // Eight, in the gaps between the tentacle clusters, right at the margin.
+    float rhopalia = pow(0.5 + 0.5 * cos(vAngle * 50.2655 + 3.14159), 26.0)
+                   * smoothstep(0.86, 0.99, vRim);
+
+    float organs = clamp(0.62 * pouch + 0.78 * gonad + 0.9 * rhopalia, 0.0, 1.0);
+    float stain = clamp(0.16 + 0.86 * mark + 0.30 * smoothstep(0.80, 1.0, vRim)
+                        + 0.70 * organs, 0.0, 1.0);
     vec3 col = mix(flesh, pigment, stain);
+
+    /*
+     * The subumbrella — the inside of the bell, which is what an upside-down
+     * animal shows you.
+     *
+     * It is a different surface and it has to look like one, or a bell seen
+     * from below is just a dimmer bell seen from above. Three differences, all
+     * of them things you can see on a jellyfish in a tank: it is much paler,
+     * because the pigment is in the outer surface and you are looking at the
+     * bands from behind; it carries the *coronal muscle*, a set of fine
+     * concentric rings that is the only structured thing on it; and the organs
+     * read harder, because nothing is in front of them.
+     */
+    if (!gl_FrontFacing) {
+      float muscle = 0.5 + 0.5 * cos(vRim * 96.0);
+      col = mix(flesh, col, 0.42);
+      col *= 1.0 - 0.16 * pow(muscle, 3.0) * smoothstep(0.25, 0.95, vRim);
+      col = mix(col, pigment, organs * 0.35);
+    }
 
     // The wet sheen on the crown.
     //
@@ -344,7 +396,21 @@ const bellFragment = /* glsl */ `
     // you should be able to see the water, the marine snow and the animal's own
     // far side through the face of a bell, and only the silhouette — where the
     // sight-line runs along the sheet — should go anywhere near solid.
+    // A cold rim off the far side.
+    //
+    // The tank's light is a ceiling light, and everything in the picture is lit
+    // from that one direction — so an animal's silhouette dies into the water
+    // behind it. What separates it is the water's own glow coming past it: a
+    // thin cold edge where the sheet is most nearly edge-on. Taken from the
+    // water ramp, so it is the water's blue and not a light invented here.
+    float edge = pow(facing, 6.0);
+    col += texture2D(uWaterRamp, vec2(0.92, 0.5)).rgb * edge * (0.55 + 0.45 * lit) * 1.5;
+
     float body = 0.20 + 0.46 * facing + 0.30 * smoothstep(0.62, 1.0, vRim);
+    // The far surface of the same bell, at a third the weight: it is behind a
+    // whole animal's worth of tissue, and drawn at full strength it doubles
+    // every marking on the near side.
+    if (!gl_FrontFacing) body *= 0.34;
     gl_FragColor = vec4(col, uFade * clamp(body, 0.0, 1.0));
   }
 `;
@@ -630,11 +696,23 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
     fragmentShader: bellFragment,
     transparent: true,
     depthWrite: false,
-    // Front faces only. Drawing both and blending them at equal weight turned
-    // every bell into a muddle of its own far side; the reference's bells are
-    // single clean masses, and what little of the underside shows through is
-    // already carried by the transmission term.
-    side: THREE.FrontSide,
+    /*
+     * Both sides, and this is a bug fix rather than a preference.
+     *
+     * Front faces only was fine while every animal was upright: you were always
+     * looking at the outside of the dome. Now that they turn over (swarm.ts) an
+     * inverted one presents its *underside* to the camera — and every face of a
+     * dome seen from underneath is a back face, so the whole bell was culled
+     * and an upside-down jellyfish arrived as a set of tentacles with nothing
+     * on the end of them.
+     *
+     * The old objection — that drawing both sides at equal weight turns a bell
+     * into a muddle of its own far side — is answered by not drawing them at
+     * equal weight. The fragment shader knows which side it is on, and the
+     * subumbrella is a different surface: paler, ringed with muscle, and far
+     * fainter, because it is the inside of the animal.
+     */
+    side: THREE.DoubleSide,
     blending: THREE.NormalBlending,
   });
   const bell = new THREE.Mesh(sharedBell.geometry, bellMat);
