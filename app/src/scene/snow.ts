@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PIPE_RADIUS, TANK_HEIGHT } from '../core/tank';
 import { WATER_GLSL } from './water';
 import { waterRamp } from './ramps';
+import { LED } from './led';
 
 /**
  * Marine snow — the drifting motes that fill the reference's water.
@@ -55,6 +56,7 @@ export function createSnow(camPos: THREE.Vector3): Snow {
       uFlow: { value: 0.5 },
       uCamPos: { value: camPos },
       uRamp: { value: waterRamp() },
+      uLed: { value: LED },
     },
     vertexShader: /* glsl */ `
       attribute float aSeed;
@@ -89,6 +91,7 @@ export function createSnow(camPos: THREE.Vector3): Snow {
       varying float vLit;
       varying float vSeed;
       uniform sampler2D uRamp;
+      uniform vec3 uLed;
       void main() {
         vec2 d = gl_PointCoord - 0.5;
         float r = dot(d, d);
@@ -109,7 +112,7 @@ export function createSnow(camPos: THREE.Vector3): Snow {
         // Additive, so the brightness is capped rather than left to the shaft:
         // where a beam crosses a dense patch the sum ran past white and the
         // patch stopped being made of motes.
-        gl_FragColor = vec4(col * min(1.7, 0.9 + 1.5 * vLit), soft * (0.30 + 0.52 * vLit));
+        gl_FragColor = vec4(col * uLed * min(1.7, 0.9 + 1.5 * vLit), soft * (0.30 + 0.52 * vLit));
       }
     `,
     transparent: true,

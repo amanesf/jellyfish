@@ -19,18 +19,32 @@ html, body {
   font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
 }
 
+/* The room the box stands in. A single very slow wash of light from above,
+ * the same direction the tank is lit from, so the page and the picture agree
+ * about where the light is. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(120% 65% at 50% -10%, #0d1a2b 0%, #05080e 62%);
+  z-index: -1;
+}
+
 #page {
-  max-width: 900px;
+  max-width: 760px;
   margin: 0 auto;
-  padding: 16px 12px 48px;
+  padding: 28px 14px 56px;
 }
 
 .title {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 500;
-  letter-spacing: 0.25em;
-  color: var(--dim);
-  margin: 4px 0 12px;
+  letter-spacing: 0.62em;
+  /* The last letter's tracking is empty space on the right; without this the
+   * title sits visibly left of centre. */
+  text-indent: 0.62em;
+  color: #9db6cd;
+  margin: 0 0 18px;
   text-align: center;
 }
 
@@ -42,8 +56,14 @@ html, body {
   width: 100%;
   aspect-ratio: 896 / 1200;
   overflow: hidden;
-  border-radius: 6px;
+  border-radius: 3px;
   background: #05080e;
+  /* The picture is the only lit thing on the page, so it is allowed to spill a
+   * little onto it — a lit object in a dark room does. */
+  box-shadow:
+    0 0 0 1px rgba(150, 190, 225, 0.10),
+    0 24px 70px -28px rgba(70, 140, 200, 0.42),
+    0 2px 40px -12px rgba(0, 0, 0, 0.9);
 }
 
 #app, #app canvas {
@@ -55,35 +75,68 @@ html, body {
 .console {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 4px 0;
+  gap: 4px;
+  margin-top: 18px;
+  padding: 10px 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(140, 180, 215, 0.09);
+  background: rgba(120, 165, 210, 0.045);
 }
 
 .row {
   display: grid;
-  grid-template-columns: 5.5em 1fr 3.5em;
+  grid-template-columns: 4.6em 1fr 3.2em;
   align-items: center;
-  gap: 10px;
-  font-size: 12px;
+  gap: 12px;
+  padding: 7px 0;
+  font-size: 11px;
+  letter-spacing: 0.16em;
   color: var(--dim);
 }
 
+.row + .row { border-top: 1px solid rgba(140, 180, 215, 0.07); }
+
+/* Drawn rather than themed: `accent-color` gives a filled track in a blue the
+ * page does not otherwise contain, and it is the loudest thing under the
+ * picture. A hairline and a small round handle is quieter than the tank. */
 .row input[type="range"] {
   width: 100%;
-  accent-color: #7fb2d9;
+  height: 18px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+}
+.row input[type="range"]::-webkit-slider-runnable-track {
+  height: 1px;
+  background: rgba(160, 195, 225, 0.24);
+}
+.row input[type="range"]::-moz-range-track {
+  height: 1px;
+  background: rgba(160, 195, 225, 0.24);
+}
+.row input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: #cfe0f2;
+  box-shadow: 0 0 8px rgba(150, 200, 240, 0.55);
+}
+.row input[type="range"]::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: 0;
+  border-radius: 50%;
+  background: #cfe0f2;
+  box-shadow: 0 0 8px rgba(150, 200, 240, 0.55);
 }
 
 .row .value {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
   color: var(--ink);
-}
-
-.note {
-  font-size: 12px;
-  line-height: 1.9;
-  color: var(--dim);
-  margin: 22px 4px 0;
 }
 
 /* Measurement mode: the whole viewport is the picture and nothing else is
@@ -91,6 +144,6 @@ html, body {
  * in the app assumes it (scripts/README.md). */
 .fit-frame #page { max-width: none; padding: 0; }
 .fit-frame .title,
-.fit-frame .console,
-.fit-frame .note { display: none; }
+.fit-frame .console { display: none; }
+.fit-frame body::before { display: none; }
 .fit-frame .stage { border-radius: 0; height: 100vh; aspect-ratio: auto; }

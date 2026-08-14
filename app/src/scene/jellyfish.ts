@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WATER_GLSL } from './water';
 import { bellRamp, veilRamp, waterRamp } from './ramps';
+import { LED } from './led';
 import { TANK_HEIGHT } from '../core/tank';
 
 /**
@@ -137,6 +138,7 @@ const bellFragment = /* glsl */ `
   uniform float uTime;
   uniform float uFlow;
   uniform float uFade;   // 0 while a new individual is still arriving
+  uniform vec3 uLed;
 
   ${WATER_GLSL}
 
@@ -171,8 +173,12 @@ const bellFragment = /* glsl */ `
     // Coarse on purpose. Four steps, softly joined: precise shading here turns
     // the bell into a glass ball, and the reference's bells are flat masses
     // with one bright crown and one dark underside.
-    float banded = floor(s * 4.0 + 0.5) / 4.0;
-    s = clamp(mix(s, banded, 0.55), 0.0, 1.0);
+    // Less posterised than it was. Four hard steps on a dome twice the size is
+    // no longer "a flat mass with one bright crown" — it is a paper cut-out,
+    // because at this scale each step is thirty pixels wide and the eye reads
+    // the step and not the curve.
+    float banded = floor(s * 5.0 + 0.5) / 5.0;
+    s = clamp(mix(s, banded, 0.34), 0.0, 1.0);
 
     vec3 col = texture2D(uRamp, vec2(s, 0.5)).rgb;
 
@@ -194,6 +200,7 @@ const bellFragment = /* glsl */ `
     // and it goes solid, which is exactly where the reference's bells carry
     // their most saturated orange. Drawn opaque — which is what this was — a
     // bell is a plastic toy in the water rather than a thing made of water.
+    col *= uLed;
     float body = 0.30 + 0.50 * facing + 0.24 * smoothstep(0.62, 1.0, vRim);
     gl_FragColor = vec4(col, uFade * clamp(body, 0.0, 1.0));
   }
@@ -319,6 +326,7 @@ const veilFragment = /* glsl */ `
   uniform float uFlow;
   uniform float uFade;
   uniform float uFrill;
+  uniform vec3 uLed;
 
   ${WATER_GLSL}
 
@@ -328,7 +336,11 @@ const veilFragment = /* glsl */ `
     // and what reads as ruffle at this size is a fast variation in brightness
     // along the arm, not geometry.
     float frill = 0.5 + 0.5 * sin(vAlong * 90.0 + vWorld.y * 6.0);
-    float s = 0.34 + 0.5 * lit + uFrill * 0.22 * frill - 0.35 * vAlong;
+    // Kept off the top of the ramp. The veil ramp's last bucket is the
+    // brightest thing in the picture by a distance, and the bloom threshold
+    // sits below it: an arm crossing a light shaft went to white and smeared a
+    // headlight across the glass. Tissue this thin is bright, not incandescent.
+    float s = 0.30 + 0.34 * lit + uFrill * 0.20 * frill - 0.32 * vAlong;
     float banded = floor(s * 5.0 + 0.5) / 5.0;
     s = clamp(mix(s, banded, 0.4), 0.0, 1.0);
 
@@ -354,6 +366,7 @@ const veilFragment = /* glsl */ `
     // sheet folds back on itself, nearly clear between. That is what makes a
     // lace edge rather than a painted ribbon, and it is most of the 透明感 the
     // reference has and this did not.
+    col *= uLed;
     float a = uFade * (1.0 - vAlong * 0.72) * (0.16 + 0.34 * frill);
     gl_FragColor = vec4(col, a);
   }
@@ -396,6 +409,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
       uFlow: { value: 0.5 },
       uFade: { value: 0 },
       uRamp: { value: shared.bell },
+      uLed: { value: LED },
       uWaterRamp: { value: shared.water },
       uCamPos: { value: shared.camPos },
     },
@@ -482,6 +496,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.15 : 0.09) : size * 0.022 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },
+        uLed: { value: LED },
         uWaterRamp: { value: shared.water },
         uTime: { value: 0 },
         uFlow: { value: 0.5 },

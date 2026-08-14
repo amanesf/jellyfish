@@ -153,8 +153,8 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
     // animal is what the picture is for, so it is given the near half of the
     // depth range instead.
     const size = species === 'bell'
-      ? 0.083 + rand(seed, 3) * 0.037
-      : 0.044 + rand(seed, 3) * 0.030;
+      ? 0.166 + rand(seed, 3) * 0.074
+      : 0.088 + rand(seed, 3) * 0.060;
     const period = species === 'bell'
       ? 1.05 + rand(seed, 4) * 0.5
       : 1.5 + rand(seed, 5) * 0.9;

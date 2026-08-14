@@ -7,6 +7,7 @@ import { createWater } from './scene/water';
 import { createSnow } from './scene/snow';
 import { createSwarm } from './scene/swarm';
 import { createControls } from './ui/controls';
+import { setLed } from './scene/led';
 
 /**
  * The app.
@@ -78,6 +79,7 @@ let last = performance.now();
 
 function step(dt: number): void {
   simTime += dt;
+  setLed(controls.led());
   water.update(simTime, controls.flow(), controls.light());
   snow.update(simTime, controls.flow());
   swarm.update(dt, simTime, controls.count(), controls.flow());
@@ -106,7 +108,7 @@ function frame(now: number): void {
 
   const elapsed = Math.min(0.25, (now - last) / 1000);
   last = now;
-  carry += elapsed * controls.timeScale();
+  carry += elapsed;
   // Clamped: after a tab has been in the background for a minute, catching up
   // every step would stall for a second. The scene simply resumes.
   let steps = 0;

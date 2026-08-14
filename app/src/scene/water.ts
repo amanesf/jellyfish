@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { EYE_DISTANCE, EYE_HEIGHT, PIPE_RADIUS, TANK_HEIGHT } from '../core/tank';
 import { waterRamp } from './ramps';
+import { LED } from './led';
 
 /**
  * The body of water, and the light coming down through it (plan.md §8.1).
@@ -138,6 +139,7 @@ const fragmentShader = /* glsl */ `
   uniform float uTime;
   uniform float uFlow;
   uniform float uLightTint;
+  uniform vec3 uLed;
   uniform sampler2D uRamp;
 
   ${WATER_GLSL}
@@ -234,17 +236,19 @@ const fragmentShader = /* glsl */ `
     float reach = 1.0 - exp(-sigma * (t1 - t0));
     float s = clamp(light / max(0.25, reach) * 0.99, 0.0, 1.0);
 
-    // The tank's wall is thick, and at the silhouette you are looking along it:
-    // the water there is seen through far more acrylic and reads deeper. This
-    // is the one place a geometric term touches the tone, and it is a term the
-    // ray already has — how obliquely it passed through the wall.
+    // The sides of the cylinder, where the wall stops being a window and
+    // starts being a lens.
+    //
+    // This used to *darken* here, on the reasoning that the sight-line runs
+    // along a thick acrylic wall. That is true of the acrylic and false of the
+    // picture: a round tank refracts, and near the silhouette the ray you
+    // follow back into the water has been bent along the glass, so it has
+    // travelled through far more lit water than the geometry says. Real
+    // cylindrical tanks are *brighter* at their two sides, brightly enough that
+    // the far wall smears out into a band of light — and the reference has
+    // exactly that band down both edges.
     float u = length((o + dir * t0).xz);
-    // Nearly nothing, and that is the measurement's answer: the solver pinned
-    // this against "no darkening at all". The reference's tank does not go dark
-    // at its silhouette the way a thick acrylic wall would, because the artist
-    // painted a bright rim highlight there instead — and that rim is in the
-    // plate, not here.
-    s *= mix(1.0, 0.88, smoothstep(0.72, 1.0, u));
+    s *= mix(1.0, 1.30, smoothstep(0.62, 0.99, u));
 
     vec3 col = texture2D(uRamp, vec2(s, 0.5)).rgb;
     // The knob is a *colour*, not a level.
@@ -265,6 +269,17 @@ const fragmentShader = /* glsl */ `
       ? mix(vec3(1.0), vec3(0.76, 0.90, 1.20), -k)
       : mix(vec3(1.0), vec3(0.88, 1.15, 0.97), k);
     col *= gain;
+
+    // The acrylic's own gloss: a hard, narrow specular right at the turn of
+    // the cylinder, where the wall is edge-on and throws the room back at you.
+    // Additive and cool, because what it is reflecting is the gallery, which is
+    // dark and lit blue. Without it the tank has no surface at all — the water
+    // simply stops — and a surface is the difference between a tank and a
+    // cylinder-shaped hole.
+    float gloss = smoothstep(0.88, 0.985, u) * (1.0 - smoothstep(0.985, 1.0, u));
+    col += vec3(0.055, 0.085, 0.125) * gloss;
+
+    col *= uLed;
 
     if (hitPipe && abs(t1 - p0) < 1e-4) {
       // The pipe: the same water, a shade lighter and flat, with a soft edge
@@ -288,6 +303,7 @@ export function createWater(): Water {
       uTime: { value: 0 },
       uFlow: { value: 0.5 },
       uLightTint: { value: 0.0 },
+      uLed: { value: LED },
       uRamp: { value: ramp },
     },
     vertexShader,

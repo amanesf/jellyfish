@@ -17,8 +17,8 @@ export interface Controls {
   /** The water's colour, 0 (indigo) .. 0.5 (as measured) .. 1 (green-teal).
    * Not a brightness — see scene/water.ts. */
   light: () => number;
-  /** Playback rate, 1-8x. */
-  timeScale: () => number;
+  /** The tank's own lamp, 0 (white) .. 1 (right round the LED wheel). */
+  led: () => number;
   /** Move a knob from code, as the capture harness does. */
   setValue: (key: string, value: number) => void;
 }
@@ -36,8 +36,8 @@ interface SliderSpec {
 const SLIDERS: SliderSpec[] = [
   { key: 'count', label: '個体数', min: 2, max: 20, step: 1, value: 8, format: (v) => `${v}体` },
   { key: 'flow', label: '水流', min: 0, max: 1, step: 0.01, value: 0, format: (v) => v.toFixed(2) },
-  { key: 'light', label: '水の色', min: 0, max: 1, step: 0.01, value: 0.5, format: (v) => v.toFixed(2) },
-  { key: 'speed', label: '倍速', min: 1, max: 8, step: 0.5, value: 1, format: (v) => `${v}x` },
+  { key: 'light', label: '水の色', min: 0, max: 1, step: 0.01, value: 1, format: (v) => v.toFixed(2) },
+  { key: 'led', label: '照明色', min: 0, max: 1, step: 0.01, value: 0, format: (v) => (v < 0.005 ? 'OFF' : v.toFixed(2)) },
 ];
 
 export function createControls(host: HTMLElement): Controls {
@@ -79,7 +79,7 @@ export function createControls(host: HTMLElement): Controls {
     count: () => get('count'),
     flow: () => get('flow'),
     light: () => get('light'),
-    timeScale: () => get('speed'),
+    led: () => get('led'),
     setValue(key, value) {
       const input = inputs.get(key);
       const spec = SLIDERS.find((s) => s.key === key);
