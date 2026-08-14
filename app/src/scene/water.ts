@@ -297,7 +297,14 @@ const fragmentShader = /* glsl */ `
     // is that the wall's normal has turned away from the eye.
     vec2 nrm = normalize((o + dir * t0).xz);
     float edge = 1.0 - abs(dot(nrm, normalize(dir.xz)));
-    s *= mix(1.0, 1.30, smoothstep(0.55, 0.96, edge));
+    // Across the whole visible width, not just the last few pixels.
+    //
+    // The band was keyed to edge 0.55-0.96, and edge only reaches 1.0 exactly
+    // at the tangent — which the plate's painted acrylic rim is standing in
+    // front of. So the brightening was almost entirely hidden behind the paint
+    // and a round tank came out flat-lit, which is the opposite of what a round
+    // tank does. It starts as soon as the wall begins to turn away.
+    s *= mix(1.0, 1.55, smoothstep(0.10, 0.80, edge));
 
     vec3 col = texture2D(uRamp, vec2(s, 0.5)).rgb;
     // The knob is a *colour*, not a level.
@@ -323,7 +330,7 @@ const fragmentShader = /* glsl */ `
     // the cylinder, where the wall is edge-on and throws the room back at you.
     // Without it the tank has no surface at all — the water simply stops — and
     // a surface is the difference between a tank and a cylinder-shaped hole.
-    float gloss = smoothstep(0.86, 0.985, edge) * (1.0 - smoothstep(0.985, 1.0, edge));
+    float gloss = smoothstep(0.74, 0.95, edge);
     col += vec3(0.055, 0.085, 0.125) * gloss;
 
     // ...and what it throws back is the gallery (scripts/reflection.js).
@@ -340,9 +347,14 @@ const fragmentShader = /* glsl */ `
     // reading: a legible visitor in the reflection takes the eye off the tank,
     // and the tank is the subject.
     float mirrorX = 0.5 + asin(clamp(nrm.x, -1.0, 1.0)) / 3.14159265;
-    float fresnel = pow(edge, 3.2);
+    // Fresnel, but a *glass* Fresnel rather than a mathematician's one. At an
+    // exponent of 3.2 the room was confined to the outermost few pixels of the
+    // tank, which the plate then covers: the reflection was in the render and
+    // could not be seen. Acrylic mirrors well before grazing, and it has a
+    // floor — there is always a little of the room in the glass.
+    float fresnel = 0.10 + 0.90 * pow(edge, 1.5);
     vec3 room = texture2D(uReflect, vec2(mirrorX, clamp(0.34 + vUv.y * 0.40, 0.0, 1.0))).rgb;
-    col += room * fresnel * 0.16;
+    col += room * fresnel * 0.55;
 
     col *= uLed;
 
