@@ -690,9 +690,24 @@ const veilVertex = /* glsl */ `
      *    why a real one looks like a run of separate scraps when it is one
      *    continuous sheet.
      */
-    float lobes = 0.60 + 0.40 * sin(aAlong * 26.0 + uSeed * 6.28)
-                       + 0.20 * sin(aAlong * 61.0 - uSeed * 3.10);
-    float twist = 0.28 + 0.72 * abs(cos(aAlong * 8.5 + uSeed * 5.7));
+    /*
+     * The frequencies are bounded by the mesh, and the last version's were not.
+     *
+     * This is why three attempts at the ruffle produced thin streaks instead of
+     * a frilled sheet. An arm carries 22 nodes; a width modulation at 26 cycles
+     * along it is 1.2 cycles *per segment*, and one at 61 is nearly three. The
+     * geometry cannot represent a fold it has no vertex for — what came out was
+     * not a lobed edge but aliasing, a random width per node, which is exactly
+     * the wispy noise it looked like.
+     *
+     * Nyquist is 11 cycles over 22 nodes, and a shape needs several vertices
+     * per lobe to read as a curve rather than a zigzag: 5 and 9 give four or
+     * five vertices to a lobe, which is a scallop. The twist is slower still —
+     * a sheet turns over three times down its length, not nine.
+     */
+    float lobes = 0.58 + 0.42 * sin(aAlong * 5.0 + uSeed * 6.28)
+                       + 0.22 * sin(aAlong * 9.0 - uSeed * 3.10);
+    float twist = 0.34 + 0.66 * abs(cos(aAlong * 3.2 + uSeed * 5.7));
     w *= mix(1.0, lobes * twist, uFrill);
     vTurn = twist;
 
@@ -735,8 +750,12 @@ const veilFragment = /* glsl */ `
     // turns toward you and nearly gone between folds, and both vary across the
     // width. Two frequencies crossed, and the outer edge of the ribbon weighted
     // so it is the part that breaks up.
-    float frill = 0.5 + 0.5 * sin(vAlong * 62.0 + vWorld.y * 6.0 + vSide * 2.4);
-    frill *= 0.55 + 0.45 * (0.5 + 0.5 * sin(vAlong * 17.0 - vSide * 5.5));
+    // Two scales, and the slow one has to be the *same* slow one the silhouette
+    // was cut with, or the shading describes a different sheet from the one
+    // being drawn. The fast term stays fast — it is per-pixel and it is the
+    // crinkle inside a fold, not the fold.
+    float frill = 0.5 + 0.5 * sin(vAlong * 5.0 + vSide * 2.4);
+    frill *= 0.55 + 0.45 * (0.5 + 0.5 * sin(vAlong * 34.0 - vSide * 5.5 + vWorld.y * 6.0));
     frill = mix(frill, frill * (1.0 - 0.55 * abs(vSide)), uFrill);
     // Kept off the top of the ramp. The veil ramp's last bucket is the
     // brightest thing in the picture by a distance, and the bloom threshold
@@ -810,7 +829,9 @@ const veilFragment = /* glsl */ `
     // Three strands to an arm now, so each is a third of what one was: three
     // sheets at a third compose to the density one had, and they compose with
     // *different silhouettes*, which is the whole point of the bundle.
-    float lace = (0.08 + 0.30 * pow(frill, 1.3)) * (0.30 + 0.70 * vTurn);
+    // Substantial where the sheet folds toward you. Four strands compose, so
+    // no one of them may be opaque, but at 0.08 they composed to a rumour.
+    float lace = (0.14 + 0.52 * pow(frill, 1.2)) * (0.30 + 0.70 * vTurn);
     float a = uFade * (1.0 - vAlong * (0.72 - 0.22 * uFrill)) * mix(0.52, lace, uFrill);
     gl_FragColor = vec4(col, a);
     if (uMode > 0.5) gl_FragColor = vec4(vec3(circleOfConfusion(vWorld, uCamPos)), step(0.02, a));
@@ -959,8 +980,12 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
    * and the reference's animals tow a *banner*. Four and a half radii of arm,
    * at twice the node count so the S-curves have somewhere to happen.
    */
-  const armNodes = species === 'bell' ? 22 : 24;
-  const armSegment = size * (species === 'bell' ? 0.21 : 0.30);
+  // Shorter and heavier. Measured off the reference, the oral-arm mass hangs
+  // about two bell diameters below the animal and is nearly a bell wide where
+  // it leaves the mouth — a *mass*, not a streamer. Four and a half radii of
+  // very thin ribbon was the wrong shape at both ends.
+  const armNodes = species === 'bell' ? 20 : 22;
+  const armSegment = size * (species === 'bell' ? 0.16 : 0.22);
   // More nodes for the same thread: an arc is only as smooth as the number of
   // points describing it, and the reference's tentacles are long unbroken
   // curves rather than the four or five straight runs eighteen nodes give.
@@ -1066,7 +1091,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         // mouth, not a tenth of one — it is a ribbon, and its width is what
         // makes it read as tissue rather than as string.
         uSeed: { value: rand(seed, 2) },
-        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.74 : 0.52) : size * 0.011 },
+        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.92 : 0.62) : size * 0.011 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },
         uLed: { value: LED_JELLY },

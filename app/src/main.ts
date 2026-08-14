@@ -99,6 +99,24 @@ waterUniforms.uCamMatrix.value.copy(camera.matrixWorld);
  *    anything.
  */
 const STEP = 1 / 60;
+
+/*
+ * Thirty frames a second, deliberately.
+ *
+ * The scene got expensive: two full renders of it per frame (the picture and
+ * the circle-of-confusion buffer, core/dof.ts), a variable-radius blur, the
+ * Kuwahara pass and the plate on top, over sixteen thousand Verlet nodes with
+ * three constraint passes each. On a machine that cannot quite hold sixty, what
+ * you get is not "slightly slower" — it is *judder*, because the frames land at
+ * irregular intervals and the eye reads the irregularity, not the rate.
+ *
+ * Thirty even frames look better than fifty-eight uneven ones, and nothing in
+ * this picture moves fast enough to care: a jellyfish crosses a bell's width in
+ * a couple of seconds and the whole piece is about stillness. The simulation
+ * still advances on the same fixed 1/60 step — two of them per drawn frame — so
+ * nothing about the physics or a frozen capture changes.
+ */
+const FRAME_INTERVAL = 1 / 30;
 const frozenAt = params.has('t') ? Number(params.get('t')) : null;
 let simTime = 0;
 let carry = 0;
@@ -167,6 +185,11 @@ function frame(now: number): void {
     postFx.render();
     return;
   }
+
+  // Hold to the frame interval. A little slack (90%) so a display running at
+  // exactly 60 does not alternate between drawing and skipping, which would
+  // itself be judder.
+  if ((now - last) / 1000 < FRAME_INTERVAL * 0.9) return;
 
   const elapsed = Math.min(0.25, (now - last) / 1000);
   last = now;

@@ -108,6 +108,36 @@ const fragmentShader = /* glsl */ `
     float reach = uFacing > 0.0 ? 1.0 : 0.20;
     base += texture2D(uWaterRamp, vec2(0.97, 0.5)).rgb * caustic * lit * reach * 5.2;
 
+    /*
+     * The ceiling is not a lid. It is the underside of the water surface, and
+     * that is the most beautiful thing in a real tank.
+     *
+     * Looking up through water, everything past the critical angle — 48.6° for
+     * water against air — is *totally internally reflected*. The surface is a
+     * perfect mirror everywhere except a circular window straight overhead,
+     * through which the whole sky above the tank is compressed. In a tank the
+     * window shows the room's ceiling lights, and the mirror around it shows
+     * the animals swimming below, upside down.
+     *
+     * The mirror cannot be done honestly without a second render of the scene
+     * from above, which this cannot afford. What it *can* do honestly is the
+     * window and the falloff into the mirror, and the mirror's own tone: dark,
+     * because what it is reflecting is the dark water below. That alone reads
+     * correctly — a bright disc overhead with a dark ring round it and the
+     * light shafts converging on it is what looking up in an aquarium is like.
+     */
+    if (uFacing < 0.0) {
+      // The window, at the tank's axis: r is already the disc's own radius.
+      float window = 1.0 - smoothstep(0.10, 0.46, r);
+      base += texture2D(uWaterRamp, vec2(0.99, 0.5)).rgb * window * (0.30 + 0.9 * lit) * 1.5;
+      // Past it, the mirror. It darkens toward grazing incidence because the
+      // water it reflects is darker than the water in front of it, and it
+      // carries the surface's own ripple, which is the same net the floor gets.
+      float mirror = smoothstep(0.34, 0.86, r);
+      base *= 1.0 - 0.35 * mirror;
+      base += texture2D(uWaterRamp, vec2(0.72, 0.5)).rgb * mirror * caustic * 2.2;
+    }
+
     // The rim, which is the whole point of the exercise.
     //
     // What tells you a tank is full of clear water is its far bottom edge seen
