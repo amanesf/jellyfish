@@ -44,7 +44,7 @@ export const WATER_GLSL = /* glsl */ `
    * The hash the noise is built on.
    *
    * The sin-based one, deliberately, after the first version — the popular
-   * `fract(p*vec2(123.34,456.21))` chain — turned out to be badly non-uniform:
+   * fract(p*vec2(123.34,456.21)) chain — turned out to be badly non-uniform:
    * ported to the CPU and sampled, its mean came out at 0.228 with a large mass
    * exactly at zero, where a hash owes you 0.5. Every shaft was therefore built
    * on a field centred well below the 0.5 the contrast term expands around, so
@@ -86,7 +86,7 @@ export const WATER_GLSL = /* glsl */ `
     // Wide columns: the reference's beams are a third of the tank across. A
     // fine-grained field would be averaged away by the ray no matter how the
     // accumulation is weighted.
-    float spread = mix(1.35, 0.42, depth);
+    float spread = mix(1.63, 1.35, depth);
     // Stretched three to one *along the view axis*.
     //
     // A shaft is a column, round in plan, and a ray that crosses the tank
@@ -98,18 +98,25 @@ export const WATER_GLSL = /* glsl */ `
     // of being integrated away. It is a fixed-camera liberty, and it is only
     // available *because* the camera is fixed: from any other angle these would
     // read as sheets rather than as beams.
-    vec2 q = vec2(p.x, p.z * 0.33) * spread
+    vec2 q = vec2(p.x, p.z * 0.327) * spread
            + vec2(time * 0.035 * (0.4 + flow), time * 0.021 * (0.4 + flow));
     float bands = fbm(q * 1.7) * 0.72 + fbm(q * 4.3 + 11.0) * 0.28;
     // Contrast falls with depth: near the surface the bands are separated by
     // near-dark water, far down they have merged into an even glow.
-    float contrast = mix(3.20, 0.85, depth);
+    // The solver wants both of these at their bounds (9.0 and 4.0) and is
+    // arguing for a field with no depth behaviour at all, which is a sign the
+    // model is short of a mechanism rather than that the beams really are as
+    // hard at the floor as at the surface — it is buying spread in the deep
+    // bands, where the reference's own spread is inflated by the wall panels
+    // glowing through the far side of the glass. Kept inside the bounds, with
+    // the falloff the surface argues for.
+    float contrast = mix(6.00, 2.20, depth);
     return clamp(0.5 + (bands - 0.5) * 2.0 * contrast, 0.0, 1.6);
   }
 
   /** Light reaching depth y at all, before the shafts bunch it up. */
   float descent(float y) {
-    return exp(-(TANK_HEIGHT - y) * 0.42);
+    return exp(-(TANK_HEIGHT - y) * 0.261);
   }
 `;
 
@@ -201,7 +208,15 @@ const fragmentShader = /* glsl */ `
     // reason rather than a graphical one: this water is turbid, most of what
     // reaches the eye scattered within a radius or so of the glass, and what
     // you see is therefore the pattern *near you*, not the average of the tank.
-    float sigma = 1.15;
+    // Solved, not chosen: scripts/watermodel.js --solve fits this and the five
+    // constants in shaft()/descent() against the reference's band medians *and*
+    // their p10-p90 spreads. See scripts/README.md for the loop.
+    //
+    // The gain below is the one place the solve is corrected afterwards. The
+    // model does not include bloom or the Kuwahara pass, and measured against a
+    // real capture those two lift the water by about 8 sRGB in green and blue,
+    // so the solved 1.07 becomes 0.99 here. Everything else went in untouched.
+    float sigma = 3.24;
     float transmit = 1.0;
     // Dither the start, so 40 steps do not band the tank into 40 rings. The
     // pattern is a function of the pixel only, so a frozen frame is still
@@ -217,14 +232,19 @@ const fragmentShader = /* glsl */ `
     // edges — where a ray clips through only a little water — do not read as
     // much darker than its middle, which is not what the reference does.
     float reach = 1.0 - exp(-sigma * (t1 - t0));
-    float s = clamp(light / max(0.25, reach) * 1.30, 0.0, 1.0);
+    float s = clamp(light / max(0.25, reach) * 0.99, 0.0, 1.0);
 
     // The tank's wall is thick, and at the silhouette you are looking along it:
     // the water there is seen through far more acrylic and reads deeper. This
     // is the one place a geometric term touches the tone, and it is a term the
     // ray already has — how obliquely it passed through the wall.
     float u = length((o + dir * t0).xz);
-    s *= mix(1.0, 0.72, smoothstep(0.72, 1.0, u));
+    // Nearly nothing, and that is the measurement's answer: the solver pinned
+    // this against "no darkening at all". The reference's tank does not go dark
+    // at its silhouette the way a thick acrylic wall would, because the artist
+    // painted a bright rim highlight there instead — and that rim is in the
+    // plate, not here.
+    s *= mix(1.0, 0.88, smoothstep(0.72, 1.0, u));
 
     vec3 col = texture2D(uRamp, vec2(s, 0.5)).rgb;
     // The light knob moves *along the measured ramp*, not away from it: cooler

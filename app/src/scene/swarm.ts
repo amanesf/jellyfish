@@ -46,36 +46,53 @@ interface Member {
   targetTilt: THREE.Vector3;
 }
 
-/** Value noise, matching the shader's, so the water the jellyfish drift in is
- * the same field the light shafts come from. */
-function hash21(x: number, y: number): number {
-  let px = (x * 123.34) % 1, py = (y * 456.21) % 1;
-  const d = px * px + py * py + px * 45.32 + py * 45.32;
-  px = (px + d) % 1; py = (py + d) % 1;
-  return (px * py * 43758.5453) % 1;
+/** The same hash the shader's noise is built on (scene/water.ts explains why
+ * it is the sin-based one and not the popular fract-chain). */
+function hash(x: number, y: number, z: number): number {
+  const v = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
+  return v - Math.floor(v);
 }
 
 function noise3(x: number, y: number, z: number): number {
   const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
   const xf = x - xi, yf = y - yi, zf = z - zi;
   const sx = xf * xf * (3 - 2 * xf), sy = yf * yf * (3 - 2 * yf), sz = zf * zf * (3 - 2 * zf);
-  const corner = (i: number, j: number, k: number) => Math.abs(hash21(xi + i + (zi + k) * 57.1, yi + j + (zi + k) * 31.7));
   const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-  const c00 = lerp(corner(0, 0, 0), corner(1, 0, 0), sx);
-  const c10 = lerp(corner(0, 1, 0), corner(1, 1, 0), sx);
-  const c01 = lerp(corner(0, 0, 1), corner(1, 0, 1), sx);
-  const c11 = lerp(corner(0, 1, 1), corner(1, 1, 1), sx);
+  const c = (i: number, j: number, k: number) => hash(xi + i, yi + j, zi + k);
+  const c00 = lerp(c(0, 0, 0), c(1, 0, 0), sx);
+  const c10 = lerp(c(0, 1, 0), c(1, 1, 0), sx);
+  const c01 = lerp(c(0, 0, 1), c(1, 0, 1), sx);
+  const c11 = lerp(c(0, 1, 1), c(1, 1, 1), sx);
   return lerp(lerp(c00, c10, sy), lerp(c01, c11, sy), sz);
 }
 
-/** Curl of a scalar-derived potential. Divergence-free by construction. */
+/**
+ * The flow: the curl of a vector potential, which is divergence-free by
+ * construction.
+ *
+ * That property is the whole reason for using it. A plain noise field has
+ * sources and sinks in it, and animals carried by one end up piled in the
+ * sinks — which is what the first version did, with all nine of them strung out
+ * along a single diagonal like a shoal. Water has no sinks: what goes into a
+ * region comes out of it, so the individuals fold past each other and spread.
+ *
+ * Three *independent* potentials, sampled at three offsets. Deriving all three
+ * components from one scalar (the first attempt) is not a curl at all and gives
+ * a field with a strong preferred direction.
+ */
 function curl(x: number, y: number, z: number, t: number, out: THREE.Vector3): void {
-  const e = 0.35;
-  const pot = (a: number, b: number, c: number) => noise3(a * 0.9 + t * 0.03, b * 0.9, c * 0.9 - t * 0.02);
-  const dydz = (pot(x, y + e, z) - pot(x, y - e, z)) / (2 * e);
-  const dzdy = (pot(x, y, z + e) - pot(x, y, z - e)) / (2 * e);
-  const dxdz = (pot(x + e, y, z) - pot(x - e, y, z)) / (2 * e);
-  out.set(dydz - dzdy, dxdz - dydz, dzdy - dxdz);
+  const e = 0.3;
+  const scale = 0.75;
+  const px = (a: number, b: number, c: number) => noise3(a * scale + t * 0.02, b * scale, c * scale);
+  const py = (a: number, b: number, c: number) => noise3(a * scale + 31.4, b * scale - t * 0.017, c * scale + 12.7);
+  const pz = (a: number, b: number, c: number) => noise3(a * scale - 7.3, b * scale + 5.1, c * scale + t * 0.023);
+  const dpz_dy = (pz(x, y + e, z) - pz(x, y - e, z)) / (2 * e);
+  const dpy_dz = (py(x, y, z + e) - py(x, y, z - e)) / (2 * e);
+  const dpx_dz = (px(x, y, z + e) - px(x, y, z - e)) / (2 * e);
+  const dpz_dx = (pz(x + e, y, z) - pz(x - e, y, z)) / (2 * e);
+  const dpy_dx = (py(x + e, y, z) - py(x - e, y, z)) / (2 * e);
+  const dpx_dy = (px(x, y + e, z) - px(x, y - e, z)) / (2 * e);
+  out.set(dpz_dy - dpy_dz, dpx_dz - dpz_dx, dpy_dx - dpx_dy);
 }
 
 export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
@@ -91,10 +108,14 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
     // The tank is stirred from above, so there is a slow downwelling at the
     // wall and a rise up the middle. It is also what keeps animals off the
     // glass without a wall force that would look like a wall force.
+    // Gentle, and gentler than the first version: at 0.10 the whole population
+    // ended up in a knot on the axis, which is not how the reference's tank
+    // looks — its animals are spread right across the width, and two of them
+    // are nearly touching the glass.
     const r = Math.hypot(x, z) || 1e-5;
-    out.x += (-x / r) * 0.10 * (r - 0.55);
-    out.z += (-z / r) * 0.10 * (r - 0.55);
-    out.y += (0.55 - r) * 0.16;
+    out.x += (-x / r) * 0.035 * (r - 0.72);
+    out.z += (-z / r) * 0.035 * (r - 0.72);
+    out.y += (0.62 - r) * 0.06;
   };
 
   const spawn = (initial: boolean): Member => {
@@ -102,21 +123,35 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
     // Two thirds ribbons: in the reference the pale trailing ones outnumber the
     // warm bells, and they are what fills the tank.
     const species: Species = rand(seed, 0) < 0.36 ? 'bell' : 'ribbon';
+    // Measured off the reference: its warm bells are 90-105 px across against
+    // the tank's 704, so a bell radius is about 0.07 tank radii, and the pale
+    // ones behind are half that. The first version was half again too big and
+    // two of them filled the middle of the picture.
     const size = species === 'bell'
-      ? 0.11 + rand(seed, 3) * 0.055
-      : 0.05 + rand(seed, 3) * 0.035;
+      ? 0.062 + rand(seed, 3) * 0.028
+      : 0.032 + rand(seed, 3) * 0.022;
     const period = species === 'bell'
       ? 1.05 + rand(seed, 4) * 0.5
       : 1.5 + rand(seed, 5) * 0.9;
     const jelly = createJellyfish({ species, seed, size, period }, shared);
 
     const angle = rand(seed, 6) * Math.PI * 2;
-    const radius = PIPE_RADIUS + 0.18 + rand(seed, 7) * (0.78 - PIPE_RADIUS);
-    // An arriving animal starts low and rises, unless the tank is being filled
-    // for the first time, in which case they are already spread through it.
-    const y = initial
-      ? Y_LOW + rand(seed, 8) * (Y_HIGH - Y_LOW)
-      : Y_LOW - 0.15 - rand(seed, 8) * 0.3;
+    // Spread across the whole annulus between the standpipe and the glass,
+    // and biased outward by the square root so the *area* is covered evenly
+    // rather than the radius — otherwise everything starts near the middle.
+    const inner = PIPE_RADIUS + 0.12, outer = 0.86;
+    const radius = Math.sqrt(inner * inner + rand(seed, 7) * (outer * outer - inner * inner));
+    // Arrivals appear *in* the tank and fade up, rather than swimming in from
+    // under the floor. The first version pushed them in from below Y_LOW and
+    // most of them never made it: the flow is gentle and a jellyfish is barely
+    // buoyant, so they hung under the floor until the out-of-bounds rule
+    // retired them, and a tank asked for nine animals showed three.
+    //
+    // Fading in is not a dodge. At this size and this water, an animal a third
+    // of the way back is already half-veiled (scene/jellyfish.ts), so something
+    // gaining substance over three seconds reads as one swimming forward out of
+    // the murk — which is exactly how they arrive in the reference.
+    const y = Y_LOW + rand(seed, 8) * (Y_HIGH - Y_LOW);
     jelly.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
     jelly.fade = initial ? 1 : 0;
     scene.add(jelly.group, jelly.ribbons);
@@ -209,7 +244,7 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
         j.step(dt, time, flow, flowField);
 
         // Gone means gone. The replacement is a new seed — never this one.
-        if (m.age > m.life || j.position.y < Y_LOW - 0.6) {
+        if (m.age > m.life || j.position.y < Y_LOW - 0.35) {
           retire(m);
           members.splice(i, 1);
           members.push(spawn(false));

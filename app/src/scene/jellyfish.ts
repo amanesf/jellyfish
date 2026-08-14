@@ -72,6 +72,7 @@ const bellVertex = /* glsl */ `
   varying vec3 vNormalW;
   varying vec3 vWorld;
   varying float vLobe;
+  varying float vAngle;
 
   // aRim: 0..1 up the dome. aAngle: 0..1 around it.
   attribute float aRim;
@@ -116,6 +117,7 @@ const bellVertex = /* glsl */ `
     vec4 world = modelMatrix * vec4(p3, 1.0);
     vWorld = world.xyz;
     vRim = aRim;
+    vAngle = aAngle;
     vNormalW = normalize(mat3(modelMatrix) * normalize(vec3(p3.x, p3.y * 0.75 + 0.25, p3.z)));
     gl_Position = projectionMatrix * viewMatrix * world;
   }
@@ -127,6 +129,7 @@ const bellFragment = /* glsl */ `
   varying vec3 vNormalW;
   varying vec3 vWorld;
   varying float vLobe;
+  varying float vAngle;
 
   uniform sampler2D uRamp;
   uniform sampler2D uWaterRamp;
@@ -150,7 +153,13 @@ const bellFragment = /* glsl */ `
     float top = max(dot(vNormalW, L), 0.0);
     float lit = descent(vWorld.y) * shaft(vWorld, uTime, uFlow);
 
-    float s = 0.30 + 0.42 * top * lit + 0.55 * through * lit + 0.06 * vLobe * vRim;
+    // The radial stripes. Every bell in the reference has them — the canals
+    // running from the crown to the rim — and they are most of what says
+    // "jellyfish" rather than "translucent dome" at this size. Counted off the
+    // reference: fourteen, fading out toward the crown.
+    float stripes = 0.5 + 0.5 * cos(vAngle * 87.9646);
+    float s = 0.30 + 0.42 * top * lit + 0.55 * through * lit + 0.06 * vLobe * vRim
+            + 0.10 * stripes * vRim * vRim;
 
     // Coarse on purpose. Four steps, softly joined: precise shading here turns
     // the bell into a glass ball, and the reference's bells are flat masses
@@ -361,7 +370,11 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
     fragmentShader: bellFragment,
     transparent: true,
     depthWrite: false,
-    side: THREE.DoubleSide,
+    // Front faces only. Drawing both and blending them at equal weight turned
+    // every bell into a muddle of its own far side; the reference's bells are
+    // single clean masses, and what little of the underside shows through is
+    // already carried by the transmission term.
+    side: THREE.FrontSide,
     blending: THREE.NormalBlending,
   });
   const bell = new THREE.Mesh(sharedBell.geometry, bellMat);
@@ -370,12 +383,17 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   group.add(bell);
 
   // The two species differ only in how much of them is arm.
-  const armCount = species === 'bell' ? 6 : 4;
-  const tentacleCount = species === 'bell' ? 10 : 14;
-  const armNodes = species === 'bell' ? 16 : 22;
-  const armSegment = size * (species === 'bell' ? 0.30 : 0.52);
-  const tentacleNodes = species === 'bell' ? 12 : 18;
-  const tentacleSegment = size * (species === 'bell' ? 0.42 : 0.78);
+  //
+  // Lengths are in bell radii, and they are long: in the reference a bell is
+  // about 90 px across and its tentacles trail three to four bell widths
+  // behind it. The first version's strands were a third of that and read as
+  // stubble.
+  const armCount = species === 'bell' ? 6 : 5;
+  const tentacleCount = species === 'bell' ? 12 : 16;
+  const armNodes = species === 'bell' ? 20 : 26;
+  const armSegment = size * (species === 'bell' ? 0.42 : 0.68);
+  const tentacleNodes = species === 'bell' ? 18 : 24;
+  const tentacleSegment = size * (species === 'bell' ? 0.62 : 1.05);
 
   const chains: { chain: Chain; kind: 'arm' | 'tentacle'; anchor: THREE.Vector3 }[] = [];
   const root = new THREE.Vector3();
@@ -387,7 +405,11 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   for (let i = 0; i < tentacleCount; i++) {
     const a = (i / tentacleCount) * Math.PI * 2 + rand(seed, 30 + i) * 0.4;
     const anchor = new THREE.Vector3(Math.cos(a) * size * 0.95, -size * 0.02, Math.sin(a) * size * 0.95);
-    chains.push({ chain: new Chain(tentacleNodes, tentacleSegment, root), kind: 'tentacle', anchor });
+    // Each strand a different length. Identical strands drift as one sheet,
+    // which is the single clearest tell that a jellyfish is a simulation: real
+    // tentacles are ragged and cross each other.
+    const vary = 0.65 + rand(seed, 50 + i) * 0.8;
+    chains.push({ chain: new Chain(tentacleNodes, tentacleSegment * vary, root), kind: 'tentacle', anchor });
   }
 
   // One ribbon mesh for the arms and one for the tentacles, so the whole
