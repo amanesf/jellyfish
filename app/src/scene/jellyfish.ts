@@ -392,7 +392,10 @@ const bellFragment = /* glsl */ `
     // the reference, since it is the only part of a jellyfish bright enough to
     // reach the bloom threshold.
     float sheen = pow(max(top, 0.0), 7.0) * (1.0 - smoothstep(0.15, 0.62, vRim));
-    col += vec3(0.62, 0.45, 0.20) * sheen * lit;
+    // Carried up: the animals are the lit thing in a dark room and the crown
+    // is the only part of one bright enough to reach the bloom threshold, so
+    // this term is the whole of the halo each of them has.
+    col += vec3(0.88, 0.64, 0.30) * sheen * lit;
 
     // The water in front of it. Same ramp, same shafts as scene/water.ts, so a
     // jellyfish deep in the tank sits *in* the water rather than on top of it.
@@ -440,7 +443,7 @@ const bellFragment = /* glsl */ `
      * rather than invented, so the animal still cannot leave the palette.
      */
     vec3 deep = texture2D(uRamp, vec2(clamp(1.0 - thickness * 0.42, 0.05, 0.95), 0.5)).rgb;
-    col += deep * sss * 0.42 * (0.5 + 0.5 * stain);
+    col += deep * sss * 0.58 * (0.5 + 0.5 * stain);
 
     // A cold rim off the far side.
     //

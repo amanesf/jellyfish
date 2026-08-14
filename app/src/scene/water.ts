@@ -378,13 +378,20 @@ const fragmentShader = /* glsl */ `
     col *= uLed;
 
     gl_FragColor = vec4(col, 1.0);
-    // The body of water itself, for the depth-of-field buffer (core/dof.ts).
-    // A constant, and it has to be: this is a ray-marched volume, not a
-    // surface, so it has no one distance — what the eye reads as "the water"
-    // is the far half of the tank, which is where this sits. The practical
-    // effect is that the light shafts go soft while the near animals stay
-    // sharp, which is what a lens does to a tank.
-    if (uMode > 0.5) gl_FragColor = vec4(vec3(0.62), 1.0);
+    // The water writes *nothing* to the depth-of-field buffer (core/dof.ts).
+    //
+    // It used to write a constant 0.62, on the reasoning that what the eye
+    // reads as "the water" is the far half of the tank. The reasoning is fine
+    // and the result was not: a constant over the whole frame is a uniform
+    // three-pixel smear on the background, so the light shafts, the far wall
+    // and every mote of marine snow lost their edges at once and the picture
+    // did not read as "the back is out of focus" — it read as a soft picture.
+    // The sparkle is the first thing a uniform blur kills, because sparkle is
+    // made of the smallest features in the frame.
+    //
+    // The buffer is cleared to zero, so leaving it alone means the water stays
+    // sharp and the depth of field is carried by the animals alone.
+    if (uMode > 0.5) discard;
   }
 `;
 

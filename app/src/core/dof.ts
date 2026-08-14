@@ -78,8 +78,11 @@ export const DofShader = {
     tDiffuse: { value: null as THREE.Texture | null },
     tCoC: { value: null as THREE.Texture | null },
     uTexel: { value: new THREE.Vector2() },
-    /** Maximum blur radius, in buffer pixels at 896x1200. */
-    uMaxRadius: { value: 5.5 },
+    /** Maximum blur radius, in buffer pixels at 896x1200. Small: the whole tank
+     * is two radii deep and the animals in it are 40 to 80 px across, so a
+     * radius past three or four stops reading as a lens and starts reading as
+     * a smudge. */
+    uMaxRadius: { value: 3.2 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;

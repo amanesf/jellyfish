@@ -48,7 +48,7 @@ interface SliderSpec {
 const FIXED: Record<string, number> = { flow: 0.5, light: 1 };
 
 const SLIDERS: SliderSpec[] = [
-  { key: 'count', label: '個体数', min: 2, max: 20, step: 1, value: 8, format: (v) => `${v}体` },
+  { key: 'count', label: '個体数', min: 2, max: 30, step: 1, value: 15, format: (v) => `${v}体` },
 ];
 
 export function createControls(host: HTMLElement): Controls {

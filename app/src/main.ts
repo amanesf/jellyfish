@@ -5,6 +5,7 @@ import { createCamera, FRAME_HEIGHT, FRAME_WIDTH } from './core/tank';
 import { createPostFx } from './core/postFx';
 import { createWater } from './scene/water';
 import { createSnow } from './scene/snow';
+import { createDecks } from './scene/decks';
 import { createSwarm } from './scene/swarm';
 import { createControls } from './ui/controls';
 import { setLed } from './scene/led';
@@ -26,6 +27,9 @@ const scene = new THREE.Scene();
 
 const water = createWater();
 scene.add(water.mesh);
+
+const decks = createDecks(camera.position);
+scene.add(decks.group);
 
 const snow = createSnow(camera.position);
 scene.add(snow.points);
@@ -84,6 +88,7 @@ function step(dt: number): void {
   setLed(controls.ledAuto() ? (simTime / 120) % 1 : 0);
   postFx.setTime(simTime);
   water.update(simTime, controls.flow(), controls.light());
+  decks.update(simTime, controls.flow());
   snow.update(simTime, controls.flow());
   swarm.update(dt, simTime, controls.count(), controls.flow());
 }

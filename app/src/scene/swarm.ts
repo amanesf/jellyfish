@@ -35,7 +35,7 @@ import { createJellyfish, rand, sharedTextures, type Jellyfish, type Species } f
  * fold and circulate instead of piling up in a corner.
  */
 
-const MAX_POPULATION = 20;
+const MAX_POPULATION = 30;
 
 /** How far above the floor and below the surface an animal may be. The bells
  * in the reference never touch either. */
@@ -261,7 +261,7 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
       // eight jellyfish with six of them in the same corner. Real ones do not
       // stack up either, and the reason is the same as the reason this works:
       // an animal displaces water, so the water between two of them pushes
-      // them apart. Quadratic in the population, which is at most twenty.
+      // them apart. Quadratic in the population, which is at most thirty.
       for (let a = 0; a < members.length; a++) {
         const ja = members[a].jelly;
         for (let b = a + 1; b < members.length; b++) {

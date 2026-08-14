@@ -132,18 +132,26 @@ export function createSnow(camPos: THREE.Vector3): Snow {
         // pattern never comes round again.
         float turn = sin(uTime * (0.9 + vSeed * 1.7) + vSeed * 41.0)
                    * sin(uTime * (0.31 + vSeed * 0.6) + vSeed * 17.0);
-        float flare = pow(max(0.0, turn), 6.0);
+        // A lower power means a mote spends more of its time flaring, so more
+        // of the field is alight at any moment. Six was one glint every few
+        // seconds per mote, which at this density is a tank with a handful of
+        // sparks in it.
+        float flare = pow(max(0.0, turn), 3.5);
         // The flare is a *core*, much smaller than the mote, which is what
         // keeps it a glint rather than a swelling.
         float glint = flare * (1.0 - smoothstep(0.0, 0.06, r));
         vec3 lit = col * uLed * min(1.7, 0.9 + 1.5 * vLit);
-        lit += uLed * glint * (0.7 + 1.5 * vLit);
-        gl_FragColor = vec4(lit, soft * (0.30 + 0.52 * vLit) + glint * 0.55);
-        // A mote at the back of the tank is as out of focus as anything else
-        // there, and this is where it shows most: the near snow stays as
-        // pin-points and the far snow goes to soft discs, which is the single
-        // clearest depth cue the water has.
-        if (uMode > 0.5) gl_FragColor = vec4(vec3(circleOfConfusion(vWorld, uEye)), step(0.02, gl_FragColor.a));
+        lit += uLed * glint * (1.1 + 2.2 * vLit);
+        gl_FragColor = vec4(lit, soft * (0.30 + 0.52 * vLit) + glint * 0.72);
+        // The snow does not write to the depth-of-field buffer either, and
+        // this is a deliberate trade against physics. A mote at the back of
+        // the tank *is* out of focus, and blurring it is what a lens does —
+        // but a mote is one or two pixels across and its whole contribution to
+        // the picture is that it is a hard bright point. Blur it and it is
+        // gone: the tank loses its sparkle, which is the thing the depth of
+        // field was supposed to be in service of. So the motes stay pin-sharp
+        // at every depth and the animals carry the focus on their own.
+        if (uMode > 0.5) discard;
       }
     `,
     transparent: true,
