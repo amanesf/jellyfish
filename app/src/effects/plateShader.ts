@@ -155,7 +155,22 @@ export const PlateShader = {
       // Only on the glass itself: where the plate is opaque it is the room, and
       // where it is fully open it is water.
       float glass = smoothstep(0.02, 0.20, plate.a) * (1.0 - smoothstep(0.72, 0.95, plate.a));
-      float spec = smoothstep(0.035, 0.16, turn) * glass;
+      /*
+       * ...but not around the girl.
+       *
+       * The mask above is "partial alpha", and her antialiased outline is
+       * partial alpha too — so the specular ran right round her silhouette as
+       * a bright edge, and got wider the moment the matte was properly
+       * antialiased. A painted figure in a dark hall does not carry a rim light
+       * of the tank's own brightness all the way round her.
+       *
+       * What separates her from the acrylic is how *fast* the alpha turns. The
+       * painted bands are broad and soft — a few hundredths of coverage per
+       * pixel; her outline goes from nearly nothing to nearly everything in
+       * three. So the specular takes the middle of the gradient range and drops
+       * the top of it.
+       */
+      float spec = smoothstep(0.035, 0.16, turn) * (1.0 - smoothstep(0.30, 0.60, turn)) * glass;
       // Sharpened once more, so the line has a core rather than a shoulder.
       spec *= spec;
       float breathe = 0.72 + 0.28 * sin(uTime * 0.21 + vUv.y * 5.3);

@@ -294,7 +294,7 @@ const bellFragment = /* glsl */ `
     float crown = 1.0 - smoothstep(0.0, 0.72, vRim);
     float s = 0.24 + 0.30 * top * lit + 0.46 * through * lit + 0.05 * vLobe * vRim
             + 0.46 * crown
-            - 0.24 * canal * smoothstep(0.06, 0.55, vRim);
+            - 0.50 * canal * smoothstep(0.06, 0.55, vRim);
 
     // Coarse on purpose. Four steps, softly joined: precise shading here turns
     // the bell into a glass ball, and the reference's bells are flat masses
@@ -362,7 +362,7 @@ const bellFragment = /* glsl */ `
     // The ground is pigmented too, not only the bands. At 0.16 the bell was
     // six parts pale tissue to one part colour and came out *pink*; the
     // reference's are orange all over, with the bands darker orange over it.
-    float stain = clamp(0.80 + 0.20 * mark + 0.10 * smoothstep(0.80, 1.0, vRim)
+    float stain = clamp(0.90 + 0.10 * mark + 0.10 * smoothstep(0.80, 1.0, vRim)
                         + 0.20 * organs, 0.0, 1.0);
     vec3 col = mix(flesh, pigment, stain);
 
@@ -398,7 +398,11 @@ const bellFragment = /* glsl */ `
     // Carried up: the animals are the lit thing in a dark room and the crown
     // is the only part of one bright enough to reach the bloom threshold, so
     // this term is the whole of the halo each of them has.
-    col += vec3(0.88, 0.64, 0.30) * sheen * lit;
+    // Brighter, because the bell is opaque now. A solid dome with no highlight
+    // on it is a plastic toy; the reference's crowns go to near-white and it is
+    // the only part of the animal that reaches the bloom threshold, so this
+    // term is also the whole of the orange halo each one carries.
+    col += vec3(1.30, 0.92, 0.44) * sheen * lit;
 
     // The water in front of it. Same ramp, same shafts as scene/water.ts, so a
     // jellyfish deep in the tank sits *in* the water rather than on top of it.
@@ -410,7 +414,7 @@ const bellFragment = /* glsl */ `
     // shows its far animals plainly, dimmer and bluer but *there*.
     float veil = 1.0 - exp(-max(0.0, dist - 5.6) * 0.24);
     float ws = clamp(descent(vWorld.y) * shaft(vWorld, uTime, uFlow) * 1.3, 0.0, 1.0);
-    col = mix(col, texture2D(uWaterRamp, vec2(ws, 0.5)).rgb, veil * 0.58);
+    col = mix(col, texture2D(uWaterRamp, vec2(ws, 0.5)).rgb, veil * 0.40);
 
     // Translucent, and translucent the way a bell is: a thin dome seen through
     // its own thickness. Face-on you are looking through one sheet and the
@@ -455,8 +459,17 @@ const bellFragment = /* glsl */ `
     // behind it. What separates it is the water's own glow coming past it: a
     // thin cold edge where the sheet is most nearly edge-on. Taken from the
     // water ramp, so it is the water's blue and not a light invented here.
-    float edge = pow(facing, 6.0);
-    col += texture2D(uWaterRamp, vec2(0.92, 0.5)).rgb * edge * (0.55 + 0.45 * lit) * 1.5;
+    // Measured, not judged. The reference's bell population averages
+    // R226 G155 B119 — green well above blue, which is what "orange" is in
+    // numbers. This pipeline was landing R211 G120 B142, blue *above* green: a
+    // magenta bell. The cold rim was most of it. A rim taken straight out of
+    // the water ramp is pure blue laid along every silhouette in the tank, and
+    // a bell is mostly silhouette. Halved, and warmed halfway to neutral so it
+    // still separates the animal from the water behind it without repainting
+    // the animal.
+    float edge = pow(facing, 7.0);
+    col += mix(texture2D(uWaterRamp, vec2(0.92, 0.5)).rgb, vec3(0.55, 0.52, 0.45), 0.5)
+         * edge * (0.55 + 0.45 * lit) * 0.7;
 
     /*
      * Saturation (item 1).
@@ -472,9 +485,31 @@ const bellFragment = /* glsl */ `
      * the picture's exposure changes.
      */
     float bellLum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-    col = max(vec3(0.0), mix(vec3(bellLum), col, 1.45));
+    // 1.45 overshot: measured against the reference the bells came out R239
+    // G129 against its R226 G155 — the right hue family, too far round toward
+    // vermilion. The ramp is already saturated (its population was selected for
+    // strongly warm pixels, which is the saturated tail of the real bells), so
+    // this only has to lift the middle of it.
+    col = max(vec3(0.0), mix(vec3(bellLum), col, 1.16));
 
-    float body = 0.20 + 0.46 * facing + 0.30 * smoothstep(0.62, 1.0, vRim);
+    /*
+     * How solid the bell is, and the last and largest reason its colour was
+     * wrong.
+     *
+     * At 0.20 base the *face* of a bell was one fifth animal and four fifths
+     * the water behind it — so the pixel a viewer calls "the bell's colour" was
+     * mostly tank. That is the whole of the residual blue: measured, the
+     * composited bells came out B130 against G119 while the reference's are
+     * G155 against B119, and the ramp being sampled is orange in both cases.
+     *
+     * "You should see the water through it" was right about a jellyfish and
+     * wrong about this one. An akakurage's umbrella is thin but it is
+     * pigmented, and in the reference you cannot see the far wall through the
+     * middle of a bell — you see it through the skirt and around the margin,
+     * which is where the sheet actually thins. So the body is solid and the
+     * transparency is put where the animal has it.
+     */
+    float body = 0.62 + 0.26 * facing - 0.24 * smoothstep(0.72, 1.0, vRim);
     // The far surface of the same bell, at a third the weight: it is behind a
     // whole animal's worth of tissue, and drawn at full strength it doubles
     // every marking on the near side.
@@ -916,12 +951,24 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   interface Anchor { angle: number; rim: number; }
   const chains: { chain: Chain; kind: 'arm' | 'tentacle'; at: Anchor }[] = [];
   const root = new THREE.Vector3();
+  /*
+   * All four arms out of one place, and that place is inside the bell.
+   *
+   * They were hung at four points spread around the dome at 0.42 of the way up
+   * its side, which put them on the *outside* of the umbrella above its widest
+   * point — four separate ribbons stuck to the top of the animal like
+   * streamers taped to a hat. An oral arm is not attached to the umbrella at
+   * all: the four of them are the corners of one mouth, on a stalk hanging
+   * under the middle of the subumbrella, and they leave the animal together
+   * from that single point and only separate further down.
+   */
   for (let i = 0; i < armCount; i++) {
-    // Under the crown, inside the skirt — the mouth is at the middle of the
-    // underside, not on the rim, so these hang from half way down the dome.
-    const angle = i / armCount + rand(seed, 10 + i) * 0.06;
-    chains.push({ chain: new Chain(armNodes, armSegment, root, rand(seed, 80 + i) * 6.28), kind: 'arm', at: { angle, rim: 0.42 } });
+    const angle = i / armCount;
+    chains.push({ chain: new Chain(armNodes, armSegment, root, rand(seed, 80 + i) * 6.28), kind: 'arm', at: { angle, rim: 0 } });
   }
+  /** How far under the crown the mouth hangs, in bell radii. Past the skirt,
+   * which sits near -0.4, so the arms leave from inside the bell. */
+  const ARM_DROP = 0.62;
   for (let i = 0; i < tentacleCount; i++) {
     // Eight clusters, five or so strands each, with the gaps between clusters
     // wider than the gaps within one.
@@ -1089,6 +1136,14 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
       const seedAngle = bellMat.uniforms.uSeed.value as number;
       for (const c of chains) {
         rimPoint(c.at.angle, phase, seedAngle, time, activity, c.at.rim, anchor);
+        if (c.kind === 'arm') {
+          // Down the axis to the mouth, with a hair of spread so the four do
+          // not begin as a single line.
+          const a = c.at.angle * Math.PI * 2;
+          anchor.x += Math.cos(a) * 0.05;
+          anchor.z += Math.sin(a) * 0.05;
+          anchor.y -= ARM_DROP;
+        }
         anchor.multiplyScalar(size).applyQuaternion(group.quaternion).add(jelly.position);
         c.chain.step(dt, time, anchor, flowField, c.kind === 'arm' ? 0.90 : 0.94);
       }

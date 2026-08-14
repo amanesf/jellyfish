@@ -429,7 +429,11 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
       for (const m of members) {
         const d = eye.distanceToSquared(m.jelly.position);
         m.jelly.group.renderOrder = 1000 - d;
-        m.jelly.ribbons.renderOrder = 1000 - d + 0.5;
+        // *Behind* the bell, not in front of it. The arms hang out of the
+        // animal's mouth and under it, so where they cross the umbrella they
+        // are on its far side — four pale ribbons drawn over the bell's face
+        // is exactly the "taped on" look.
+        m.jelly.ribbons.renderOrder = 1000 - d - 0.5;
       }
     },
     dispose() {
