@@ -400,7 +400,31 @@ const bellFragment = /* glsl */ `
     // light on a wet dome. It is also what gives each animal the orange halo in
     // the reference, since it is the only part of a jellyfish bright enough to
     // reach the bloom threshold.
-    float sheen = pow(max(top, 0.0), 7.0) * (1.0 - smoothstep(0.15, 0.62, vRim));
+    /*
+     * The animal's own light does not fall off the way the water's does.
+     *
+     * The lit term is descent() times the shafts — the water's fitted vertical
+     * gradient — and multiplying the crown highlight by it meant an animal only
+     * lit up near the surface, where descent() is 1, and went dull at the floor
+     * where it is 0.48. That gradient is measured and it is right *for the
+     * water*: scripts/watermodel.js fitted it against the reference and the
+     * tank's tone depends on it, so it is not touched. But a jellyfish is not a
+     * volume of water being lit from above — it is a thin dome catching a
+     * specular, and the reason one at the top of the tank looks better than one
+     * at the bottom is not physics, it is that the bottom one has been dimmed
+     * by a term that has nothing to do with it.
+     *
+     * So the highlight gets a nearly flat version: a quarter of the water's
+     * falloff, which keeps a trace of "higher is brighter" and stops the floor
+     * of the tank being a place where the animals go out.
+     */
+    float glowLit = mix(1.0, lit, 0.25);
+
+    // Broader and much stronger. At a power of 7 the highlight was a dot on the
+    // very top of the crown; a wet dome under a broad ceiling light carries it
+    // across most of the upper surface, and it is the single thing that makes
+    // one of these read as lit rather than as coloured.
+    float sheen = pow(max(top, 0.0), 3.6) * (1.0 - smoothstep(0.24, 0.78, vRim));
     // Carried up: the animals are the lit thing in a dark room and the crown
     // is the only part of one bright enough to reach the bloom threshold, so
     // this term is the whole of the halo each of them has.
@@ -408,14 +432,14 @@ const bellFragment = /* glsl */ `
     // on it is a plastic toy; the reference's crowns go to near-white and it is
     // the only part of the animal that reaches the bloom threshold, so this
     // term is also the whole of the orange halo each one carries.
-    col += vec3(1.30, 0.92, 0.44) * sheen * lit;
+    col += vec3(2.30, 1.55, 0.72) * sheen * glowLit;
     // The halo. In the reference the *water around* a bell is stained orange
     // for a bell's width out from it — the animal is bright enough that the
     // camera blooms on the whole dome and not only its crown. Bloom can only
     // spread what is over its threshold, so the dome itself is carried over it:
     // a broad, weak, warm term across the whole lit face, which is nothing on
     // its own and is the halo once the bloom has it.
-    col += vec3(0.42, 0.20, 0.06) * (0.35 + 0.65 * top) * lit * (1.0 - 0.5 * vRim);
+    col += vec3(0.62, 0.30, 0.09) * (0.35 + 0.65 * top) * glowLit * (1.0 - 0.5 * vRim);
 
     // The water in front of it. Same ramp, same shafts as scene/water.ts, so a
     // jellyfish deep in the tank sits *in* the water rather than on top of it.
@@ -448,7 +472,7 @@ const bellFragment = /* glsl */ `
     col = mix(col, uLed.rgb * bright, uLed.w);
     // ...and the crown highlight is emitted in it, which is what makes the
     // bloom halo around each animal come up in the lamp's colour too.
-    col += uLed.rgb * sheen * lit * uLed.w * 0.55;
+    col += uLed.rgb * sheen * glowLit * uLed.w * 0.55;
     // Thinner than it was. What the reference has and this did not is 透明感:
     // you should be able to see the water, the marine snow and the animal's own
     // far side through the face of a bell, and only the silhouette — where the
