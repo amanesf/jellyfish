@@ -14,7 +14,8 @@ export interface Controls {
   count: () => number;
   /** 0 (still) .. 1 (stirred). Drives the flow field and the shafts. */
   flow: () => number;
-  /** 0 (blue-white overhead light) .. 1 (deep indigo). */
+  /** The water's colour, 0 (indigo) .. 0.5 (as measured) .. 1 (green-teal).
+   * Not a brightness — see scene/water.ts. */
   light: () => number;
   /** Playback rate, 1-8x. */
   timeScale: () => number;
@@ -33,9 +34,9 @@ interface SliderSpec {
 }
 
 const SLIDERS: SliderSpec[] = [
-  { key: 'count', label: '個体数', min: 2, max: 20, step: 1, value: 9, format: (v) => `${v}体` },
-  { key: 'flow', label: '水流', min: 0, max: 1, step: 0.01, value: 0.45, format: (v) => v.toFixed(2) },
-  { key: 'light', label: '照明', min: 0, max: 1, step: 0.01, value: 0.0, format: (v) => v.toFixed(2) },
+  { key: 'count', label: '個体数', min: 2, max: 20, step: 1, value: 8, format: (v) => `${v}体` },
+  { key: 'flow', label: '水流', min: 0, max: 1, step: 0.01, value: 0, format: (v) => v.toFixed(2) },
+  { key: 'light', label: '水の色', min: 0, max: 1, step: 0.01, value: 0.5, format: (v) => v.toFixed(2) },
   { key: 'speed', label: '倍速', min: 1, max: 8, step: 0.5, value: 1, format: (v) => `${v}x` },
 ];
 

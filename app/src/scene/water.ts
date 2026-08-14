@@ -247,10 +247,24 @@ const fragmentShader = /* glsl */ `
     s *= mix(1.0, 0.88, smoothstep(0.72, 1.0, u));
 
     vec3 col = texture2D(uRamp, vec2(s, 0.5)).rgb;
-    // The light knob moves *along the measured ramp*, not away from it: cooler
-    // means reading the ramp lower, where the reference's own water is deeper
-    // and bluer. Nothing here invents a colour the painting does not contain.
-    col = mix(col, texture2D(uRamp, vec2(s * 0.62, 0.5)).rgb, uLightTint);
+    // The knob is a *colour*, not a level.
+    //
+    // It used to read the ramp lower, which is the same water seen deeper — so
+    // the only thing it could do was darken, and a tank asked for a different
+    // light went black instead. What a viewer wants from this knob is the
+    // aquarium's own lamp colour, and that is a chromaticity, not an exposure.
+    //
+    // The centre is untouched: at 0.5 the water is exactly the colour measured
+    // off the reference and nothing here has moved it. Away from centre the
+    // gain leans the ramp toward indigo one way and toward the green-teal of a
+    // moon-jelly tank the other, in *linear* light and before the tonemap, so
+    // the picture keeps its tonal shape and only its hue turns. Luminance is
+    // held to within a few percent so the knob cannot be used as a dimmer.
+    float k = uLightTint * 2.0 - 1.0;
+    vec3 gain = k < 0.0
+      ? mix(vec3(1.0), vec3(0.76, 0.90, 1.20), -k)
+      : mix(vec3(1.0), vec3(0.88, 1.15, 0.97), k);
+    col *= gain;
 
     if (hitPipe && abs(t1 - p0) < 1e-4) {
       // The pipe: the same water, a shade lighter and flat, with a soft edge

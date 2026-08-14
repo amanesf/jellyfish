@@ -6,15 +6,28 @@ import { createJellyfish, pulse, rand, sharedTextures, type Jellyfish, type Spec
  * The population, and the reason the tank never repeats (plan.md §1, §8.2).
  *
  * The requirement is stronger than "it loops seamlessly": nothing may come back.
- * An individual that leaves is *gone*, and what takes its place is a new draw
- * from the same distribution with a seed that has never been used — a different
- * size, a different pulse period, a different number of lobes on its bell, a
- * different path through the flow. sakura learned this the hard way with clouds
- * that came back around by modular arithmetic (image-sky-plan.md §2), and the
- * fix there is the fix here: a lifetime and a fresh seed, never a wrap.
+ * An individual is a draw from the distribution with a seed that has never been
+ * used — a different size, a different pulse period, a different number of
+ * lobes on its bell, a different path through the flow. sakura learned this the
+ * hard way with clouds that came back around by modular arithmetic
+ * (image-sky-plan.md §2). The seed counter is what guarantees it here: it only
+ * ever increases, so the hundredth jellyfish of a session cannot be the first
+ * one again.
  *
- * The seed counter is what guarantees it. It only ever increases, so the
- * hundredth jellyfish of a session cannot be the first one again.
+ * **Nothing dies on a timer, and nothing sinks out of the world.** The
+ * population used to turn over: each animal carried a lifetime of 95 to 225
+ * seconds and faded out at the end of it, and anything that drifted below the
+ * floor was retired on the spot — which is what was happening to the ones that
+ * reached the bottom. Both are visible, and a tank where animals wink out while
+ * you are watching one is not something you can watch for an hour; it is the
+ * opposite of the only thing this app is for. The turnover was solving a
+ * problem that does not exist. Novelty comes from the flow, which is
+ * aperiodic, and from the Verlet chains, which never return to a pose: the same
+ * eight animals never repeat themselves.
+ *
+ * So the tank is closed. The population changes only when the viewer moves the
+ * 個体数 knob, and then it changes slowly, at the back of the tank, where a
+ * tank's depth of water is already doing the fading.
  *
  * The flow they drift in is a curl-noise field — the curl of a vector potential
  * is divergence-free, which is what makes it look like water rather than like
@@ -27,6 +40,11 @@ const MAX_POPULATION = 20;
 /** How far above the floor and below the surface an animal may be. The bells
  * in the reference never touch either. */
 const Y_LOW = 0.25;
+
+/** Seconds an arrival takes to gain substance, and a departure to lose it.
+ * Long, because the eye catches a change of opacity long before it catches a
+ * change of position. */
+const ARRIVE = 7, LEAVE = 5;
 const Y_HIGH = TANK_HEIGHT - 0.35;
 
 export interface Swarm {
@@ -38,9 +56,10 @@ export interface Swarm {
 
 interface Member {
   jelly: Jellyfish;
-  /** Seconds. An individual is retired when it runs out, or when it leaves. */
-  life: number;
   age: number;
+  /** Set only when the count knob drops: the animal fades out over LEAVE
+   * seconds and is then removed. Nothing else ever sets it. */
+  leaving: boolean;
   /** Turn rate and heading — a jellyfish points where it is going, slowly. */
   heading: THREE.Quaternion;
   targetTilt: THREE.Vector3;
@@ -127,9 +146,15 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
     // the tank's 704, so a bell radius is about 0.07 tank radii, and the pale
     // ones behind are half that. The first version was half again too big and
     // two of them filled the middle of the picture.
+    // Measured off the reference at about 0.07 tank radii for a warm bell, and
+    // then carried up by a third. The measurement is of the *reference*, whose
+    // animals sit well back in a deep tank; at that size on a phone a bell is
+    // 40 px across and its oral arms are a suggestion rather than a shape. The
+    // animal is what the picture is for, so it is given the near half of the
+    // depth range instead.
     const size = species === 'bell'
-      ? 0.062 + rand(seed, 3) * 0.028
-      : 0.032 + rand(seed, 3) * 0.022;
+      ? 0.083 + rand(seed, 3) * 0.037
+      : 0.044 + rand(seed, 3) * 0.030;
     const period = species === 'bell'
       ? 1.05 + rand(seed, 4) * 0.5
       : 1.5 + rand(seed, 5) * 0.9;
@@ -152,14 +177,23 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
     // gaining substance over three seconds reads as one swimming forward out of
     // the murk — which is exactly how they arrive in the reference.
     const y = Y_LOW + rand(seed, 8) * (Y_HIGH - Y_LOW);
-    jelly.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
+    jelly.position.set(
+      Math.cos(angle) * radius,
+      y,
+      // Arrivals come in at the *back*. This only ever happens because the
+      // viewer asked for more animals, and it is the one moment the app has to
+      // show something appearing: at the far wall there is a tank of water
+      // between the animal and the eye, and that water is already most of the
+      // way to hiding it, so it reads as one swimming forward out of the murk.
+      initial ? Math.sin(angle) * radius : -Math.abs(Math.sin(angle) * radius) - 0.04,
+    );
     jelly.fade = initial ? 1 : 0;
     scene.add(jelly.group, jelly.ribbons);
 
     return {
       jelly,
-      life: 95 + rand(seed, 9) * 130,
       age: initial ? rand(seed, 11) * 60 : 0,
+      leaving: false,
       heading: new THREE.Quaternion(),
       targetTilt: new THREE.Vector3(),
     };
@@ -180,14 +214,32 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
       simTime = time;
       flowNow = flow;
       const wanted = Math.max(1, Math.min(MAX_POPULATION, Math.round(count)));
-      while (members.length < wanted) members.push(spawn(members.length === 0 || time < 0.5));
-      while (members.length > wanted) {
-        // Retire the oldest rather than the newest: the newest has only just
-        // arrived, and taking it back out is the one thing a viewer would see.
-        let oldest = 0;
-        for (let i = 1; i < members.length; i++) if (members[i].age > members[oldest].age) oldest = i;
-        retire(members[oldest]);
-        members.splice(oldest, 1);
+      const staying = members.filter((m) => !m.leaving);
+      // One knob, both directions. An animal already on its way out is called
+      // back rather than replaced if the knob comes back up — which is what
+      // happens every time someone drags the slider past where they meant to
+      // stop, and it should not cost the tank an animal.
+      if (staying.length < wanted) {
+        for (let i = members.length - 1; i >= 0 && staying.length < wanted; i--) {
+          if (members[i].leaving) { members[i].leaving = false; staying.push(members[i]); }
+        }
+        while (staying.length < wanted) {
+          const m = spawn(members.length === 0 || time < 0.5);
+          members.push(m);
+          staying.push(m);
+        }
+      } else if (staying.length > wanted) {
+        // The oldest leaves first, and it leaves by *fading over LEAVE
+        // seconds*, not by being deleted under the viewer's eye.
+        let n = staying.length - wanted;
+        while (n-- > 0) {
+          let oldest = -1;
+          for (let i = 0; i < members.length; i++) {
+            if (members[i].leaving) continue;
+            if (oldest < 0 || members[i].age > members[oldest].age) oldest = i;
+          }
+          if (oldest >= 0) members[oldest].leaving = true;
+        }
       }
 
       for (let i = members.length - 1; i >= 0; i--) {
@@ -207,7 +259,14 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
         flowField(j.position.x, j.position.y, j.position.z, force);
         j.velocity.addScaledVector(force, dt * 0.55);
         j.velocity.multiplyScalar(Math.pow(0.14, dt)); // water, not air
-        j.velocity.y -= 0.02 * dt;                      // very slightly heavy
+        // Neutrally buoyant, and it has to be exactly that.
+        //
+        // This used to be a steady -0.02, "very slightly heavy", and over a
+        // couple of minutes very slightly heavy is the whole tank: everything
+        // ended up on the floor, where the out-of-bounds rule took it away.
+        // That is the disappearing-at-the-bottom the tank was doing. A moon
+        // jelly is the same density as the water it lives in; what keeps it off
+        // the floor is that it pulses, and what brings it down is nothing.
         j.position.addScaledVector(j.velocity, dt);
 
         // Heading follows the flow, slowly, and never quite gets there. A
@@ -233,21 +292,33 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
           j.velocity.x *= 0.3; j.velocity.z *= 0.3;
         }
 
-        j.fade = Math.min(1, j.fade + dt * 0.35);
-        const left = m.life - m.age;
-        if (left < 4) j.fade = Math.min(j.fade, Math.max(0, left / 4));
+        // The floor and the surface, as water rather than as walls. A soft
+        // push over the last fifth of a tank radius, and a hard stop behind it
+        // that the push means nothing ever reaches. There is no rule below this
+        // one: an animal at the bottom of the tank is an animal at the bottom
+        // of the tank, and it stays there until the water moves it.
+        const nearFloor = Y_LOW + 0.20 - j.position.y;
+        if (nearFloor > 0) j.velocity.y += nearFloor * 0.55 * dt;
+        const nearTop = j.position.y - (Y_HIGH - 0.20);
+        if (nearTop > 0) j.velocity.y -= nearTop * 0.55 * dt;
         if (j.position.y > Y_HIGH) {
           j.position.y = Y_HIGH;
           j.velocity.y = Math.min(j.velocity.y, 0);
         }
+        if (j.position.y < Y_LOW) {
+          j.position.y = Y_LOW;
+          j.velocity.y = Math.max(j.velocity.y, 0);
+        }
+
+        j.fade = m.leaving
+          ? j.fade - dt / LEAVE
+          : Math.min(1, j.fade + dt / ARRIVE);
 
         j.step(dt, time, flow, flowField);
 
-        // Gone means gone. The replacement is a new seed — never this one.
-        if (m.age > m.life || j.position.y < Y_LOW - 0.35) {
+        if (m.leaving && j.fade <= 0) {
           retire(m);
           members.splice(i, 1);
-          members.push(spawn(false));
         }
       }
     },
