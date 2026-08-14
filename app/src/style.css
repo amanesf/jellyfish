@@ -1,0 +1,96 @@
+/*
+ * The page is a dark room with one lit thing in it, which is the same
+ * arrangement as the picture. Nothing here is allowed to be brighter than the
+ * tank.
+ */
+:root {
+  color-scheme: dark;
+  --ink: #cfe0f2;
+  --dim: #6f8399;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #05080e;
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
+}
+
+#page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px 12px 48px;
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.25em;
+  color: var(--dim);
+  margin: 4px 0 12px;
+  text-align: center;
+}
+
+/* The picture keeps the reference frame's aspect exactly (896x1200). Its
+ * pixels are rendered at that resolution and scaled here — see main.ts on why
+ * the buffer is pinned rather than sized to the element. */
+.stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 896 / 1200;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #05080e;
+}
+
+#app, #app canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.console {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 4px 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 5.5em 1fr 3.5em;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--dim);
+}
+
+.row input[type="range"] {
+  width: 100%;
+  accent-color: #7fb2d9;
+}
+
+.row .value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.note {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--dim);
+  margin: 22px 4px 0;
+}
+
+/* Measurement mode: the whole viewport is the picture and nothing else is
+ * drawn. scripts/capture.js renders in this shape, and every fitted constant
+ * in the app assumes it (scripts/README.md). */
+.fit-frame #page { max-width: none; padding: 0; }
+.fit-frame .title,
+.fit-frame .console,
+.fit-frame .note { display: none; }
+.fit-frame .stage { border-radius: 0; height: 100vh; aspect-ratio: auto; }

@@ -1,0 +1,9 @@
+{
+  "name": "jellyfish-art-source",
+  "private": true,
+  "description": "Root-level tooling: the measure loop (scripts/README.md) and plate keying (scripts/plate.js). The app itself lives in app/.",
+  "dependencies": {
+    "playwright": "^1.62.1",
+    "sharp": "^0.35.3"
+  }
+}
