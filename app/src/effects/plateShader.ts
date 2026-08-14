@@ -22,6 +22,10 @@ export const PlateShader = {
     tPlate: { value: null as THREE.Texture | null },
     uTexel: { value: new THREE.Vector2(1 / 896, 1 / 1200) },
     uTime: { value: 0 },
+    /** The painted cylinder's axis and radius, in frame pixels as a fraction
+     * of the frame's width — core/measured.ts, written by scripts/geom.js. */
+    uAxis: { value: 449.0 / 896.0 },
+    uRadius: { value: 352.0 / 896.0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -35,11 +39,55 @@ export const PlateShader = {
     uniform sampler2D tPlate;
     uniform vec2 uTexel;
     uniform float uTime;
+    uniform float uAxis;
+    uniform float uRadius;
     varying vec2 vUv;
 
     void main() {
-      vec3 scene = texture2D(tDiffuse, vUv).rgb;
       vec4 plate = texture2D(tPlate, vUv);
+
+      /*
+       * Refraction through the wall.
+       *
+       * The tank is a cylinder of thick acrylic full of water, and the whole of
+       * it is a lens. Nothing in the render knew that: the water was drawn with
+       * a pinhole camera and the painted cylinder was laid over the front of
+       * it, so the picture was geometrically a flat aquarium with a curved
+       * photograph in front. What a real one does is unmistakable once you look
+       * for it — the image behind the glass is *stretched horizontally* near
+       * the axis and squeezed hard toward the two edges, because there the wall
+       * is nearly edge-on to the eye and its normal turns away fastest.
+       *
+       * Snell at a cylinder, kept to the horizontal because that is the only
+       * axis the wall curves in. u is the position across the cylinder, -1 at
+       * the left edge and 1 at the right; the surface normal there makes an
+       * angle asin(u) with the view, and the ray inside is bent to
+       * asin(u / n) with n the ratio of the water's index to air's — 1.34, near
+       * enough for acrylic and water together, which differ by two percent.
+       * The displacement is the difference between where the bent ray lands and
+       * where the straight one would have, and it goes to zero on the axis and
+       * to its maximum at the rim, which is exactly where the eye expects it.
+       *
+       * Held to a fraction of what the geometry says. The full bend at the rim
+       * is over forty pixels, and the plate — the painting — cannot move with
+       * it: the water would slide out from behind its own glass. A third of it
+       * is enough to read as thickness and small enough that the seam holds.
+       */
+      float u = clamp((vUv.x - uAxis) / uRadius, -1.0, 1.0);
+      float bend = (asin(u) - asin(u / 1.34)) * uRadius * 0.34;
+      // Only where there is glass to refract through: full inside the tank,
+      // out to nothing across the last of the rim, and never on the room.
+      float inTank = 1.0 - smoothstep(0.86, 1.0, abs(u));
+      vec2 ruv = vec2(vUv.x - bend * inTank, vUv.y);
+
+      // ...and the fine distortion, from the bands themselves. Each painted
+      // highlight down the cylinder is a place where the surface turns, and a
+      // turn in the surface is a kink in what you see through it.
+      float gx = texture2D(tPlate, vUv + vec2(uTexel.x * 2.0, 0.0)).a
+               - texture2D(tPlate, vUv - vec2(uTexel.x * 2.0, 0.0)).a;
+      ruv.x -= gx * 0.010 * inTank;
+
+      vec3 scene = texture2D(tDiffuse, ruv).rgb;
 
       /*
        * The tank's own grade — the live scene only, never the painting.
