@@ -92,14 +92,33 @@ const bellVertex = /* glsl */ `
     float contract = p < 0.25 ? smoothstep(0.0, 1.0, p / 0.25)
                               : 1.0 - smoothstep(0.0, 1.0, (p - 0.25) / 0.75);
 
-    // Scalloped, not smooth: eight lobes that pull the rim *in*, deepening
+    // Scalloped, not smooth: sixteen lobes that pull the rim *in*, deepening
     // toward the edge, plus a slow wander so no two moments are the same.
-    float lobes = cos(ang * 8.0 + uSeed * 6.28 + sin(uTime * 0.35 + uSeed) * 0.6);
-    float scallop = 1.0 - 0.085 * lobes * aRim * aRim;
+    // Counted off the reference, where they are unmistakable — the rim is a
+    // row of rounded tabs, not a circle — and given four times the depth they
+    // had, because at 0.085 the scallop was inside the width of one pixel.
+    float lobes = cos(ang * 16.0 + uSeed * 6.28 + sin(uTime * 0.35 + uSeed) * 0.6);
+    float scallop = 1.0 - 0.055 * lobes * aRim * aRim;
     vLobe = lobes;
 
-    float radius = sin(aRim * 1.5707963);
-    float height = cos(aRim * 1.5707963);
+    // Past the equator, and this is the difference between a jellyfish and a
+    // beanie.
+    //
+    // The dome used to sweep exactly 90 degrees, so its widest point *was* its
+    // last point: the silhouette ended in a straight horizontal cut and the
+    // animal read as a cap with threads glued under it. A bell does not end at
+    // its equator — the skirt carries on past it and hangs down, which is why
+    // the reference's silhouette ends in a row of scalloped tabs and why you
+    // can see the underside of the animal at all. 113 degrees puts the rim
+    // four tenths of a radius below the widest point, which is where the
+    // reference's is.
+    float sweep = aRim * 1.5707963 * 1.26;
+    float radius = sin(sweep);
+    // Flattened. A sphere swept past its equator is a ball with a skirt; the
+    // reference's bells are three units across to two high, a wide shallow
+    // dome that the skirt hangs off. Measured on the big one at the middle of
+    // the frame: 110 px across the crown, 74 px from crown to rim.
+    float height = cos(sweep) * 0.67;
 
     // Contraction squeezes the bell narrower and taller, and curls the rim
     // under — the skirt, which is where the light gets through.
@@ -114,6 +133,12 @@ const bellVertex = /* glsl */ `
     );
     // A shallow bowl under the rim, so the silhouette has a concavity in it.
     p3.y -= 0.16 * aRim * aRim * aRim;
+    // The scallops go up and down as well as in and out. Pulling the tabs in
+    // radially only shows on the two edges of the silhouette, where it is a
+    // pixel of waviness; letting them hang at different heights is what makes
+    // the rim read as a row of tabs from any angle, which is how the reference
+    // reads from every angle it shows.
+    p3.y += 0.075 * lobes * aRim * aRim;
 
     vec4 world = modelMatrix * vec4(p3, 1.0);
     vWorld = world.xyz;
@@ -167,16 +192,21 @@ const bellFragment = /* glsl */ `
     // recognisable thing about the animal. Narrow, too — the line is thin and
     // the gap between lines is wide, which a plain raised cosine cannot say;
     // raising it to a power puts the width where the reference has it.
-    float canal = pow(0.5 + 0.5 * cos(vAngle * 87.9646), 5.0);
+    float canal = pow(0.5 + 0.5 * cos(vAngle * 87.9646), 9.0);
     // The canals carry a lot more of the bell than they were given. In the
     // reference they are the *structure* of the animal — hard bright lines from
     // the crown to the rim over a saturated ground — and at 0.10 they were a
     // texture you had to look for. The rim is also brighter than the dome: a
     // bell is a thin sheet seen through its own edge there, and that edge is
     // where the reference puts its most saturated orange.
-    float s = 0.34 + 0.42 * top * lit + 0.60 * through * lit + 0.08 * vLobe * vRim
-            - 0.30 * canal * smoothstep(0.10, 0.65, vRim)
-            + 0.16 * smoothstep(0.74, 1.0, vRim);
+    // The crown, explicitly. The reference's bells are near white-hot at the
+    // top and deepen to a saturated orange at the skirt, and a N·L term cannot
+    // say that on a dome this shallow — its top and its shoulder differ by very
+    // little. The gradient is the animal's own pigment, not its lighting.
+    float crown = 1.0 - smoothstep(0.0, 0.72, vRim);
+    float s = 0.24 + 0.30 * top * lit + 0.46 * through * lit + 0.05 * vLobe * vRim
+            + 0.46 * crown
+            - 0.24 * canal * smoothstep(0.06, 0.55, vRim);
 
     // Coarse on purpose. Four steps, softly joined: precise shading here turns
     // the bell into a glass ball, and the reference's bells are flat masses
@@ -189,6 +219,18 @@ const bellFragment = /* glsl */ `
     s = clamp(mix(s, banded, 0.34), 0.0, 1.0);
 
     vec3 col = texture2D(uRamp, vec2(s, 0.5)).rgb;
+
+    // The wet sheen on the crown.
+    //
+    // The measured ramp stops at 253,200,139, because that is the brightest the
+    // reference's bells *are* on average — and the reference also paints a hard
+    // near-white highlight across the top of each crown that no average can
+    // contain. Added rather than looked up, warm, and narrow: it is the ceiling
+    // light on a wet dome. It is also what gives each animal the orange halo in
+    // the reference, since it is the only part of a jellyfish bright enough to
+    // reach the bloom threshold.
+    float sheen = pow(max(top, 0.0), 7.0) * (1.0 - smoothstep(0.15, 0.62, vRim));
+    col += vec3(0.62, 0.45, 0.20) * sheen * lit;
 
     // The water in front of it. Same ramp, same shafts as scene/water.ts, so a
     // jellyfish deep in the tank sits *in* the water rather than on top of it.
@@ -385,7 +427,7 @@ const veilFragment = /* glsl */ `
     // after the bells. Giving it the arm's lacy alpha made it disappear
     // entirely, which is why the tank had no threads in it.
     float lace = 0.16 + 0.34 * frill;
-    float a = uFade * (1.0 - vAlong * 0.72) * mix(0.78, lace, uFrill);
+    float a = uFade * (1.0 - vAlong * 0.72) * mix(0.52, lace, uFrill);
     gl_FragColor = vec4(col, a);
   }
 `;
@@ -466,12 +508,17 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   const root = new THREE.Vector3();
   for (let i = 0; i < armCount; i++) {
     const a = (i / armCount) * Math.PI * 2 + rand(seed, 10 + i) * 0.5;
-    const anchor = new THREE.Vector3(Math.cos(a) * size * 0.30, -size * 0.12, Math.sin(a) * size * 0.30);
+    // Under the crown, inside the skirt — the mouth is at the middle of the
+    // underside, not on the rim.
+    const anchor = new THREE.Vector3(Math.cos(a) * size * 0.26, -size * 0.30, Math.sin(a) * size * 0.30);
     chains.push({ chain: new Chain(armNodes, armSegment, root), kind: 'arm', anchor });
   }
   for (let i = 0; i < tentacleCount; i++) {
     const a = (i / tentacleCount) * Math.PI * 2 + rand(seed, 30 + i) * 0.4;
-    const anchor = new THREE.Vector3(Math.cos(a) * size * 0.95, -size * 0.02, Math.sin(a) * size * 0.95);
+    // On the rim itself, which now hangs below the bell's widest point: the
+    // threads used to start at the equator and so appeared to sprout from the
+    // middle of the animal's face.
+    const anchor = new THREE.Vector3(Math.cos(a) * size * 0.90, -size * 0.40, Math.sin(a) * size * 0.90);
     // Each strand a different length. Identical strands drift as one sheet,
     // which is the single clearest tell that a jellyfish is a simulation: real
     // tentacles are ragged and cross each other.
@@ -513,7 +560,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         // six-armed animal is a solid mass; the reference's are ribbons a
         // tenth of the bell across, and it is the *number* of them crossing
         // each other that fills the space, not the width of any one.
-        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.15 : 0.09) : size * 0.022 },
+        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.15 : 0.09) : size * 0.013 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },
         uLed: { value: LED },
