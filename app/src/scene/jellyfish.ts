@@ -222,6 +222,38 @@ const bellFragment = /* glsl */ `
     float top = max(dot(vNormalW, L), 0.0);
     float lit = descent(vWorld.y) * shaft(vWorld, uTime, uFlow);
 
+    /*
+     * Subsurface scattering, of the kind a thin translucent sheet actually does.
+     *
+     * What was here was a single transmission term: brightness where the sheet
+     * is edge-on. That is the *silhouette* half of the effect and it misses the
+     * half that makes a jellyfish look like a jellyfish — light that goes in
+     * one side, bounces around inside the tissue and comes out the other,
+     * toward the eye. Two things follow from that and neither is reachable
+     * without a real scattering term:
+     *
+     *  - it is strongest when you are looking *along* the light, i.e. when the
+     *    lamp is behind the animal. The ceiling is the only light in this tank,
+     *    so this is what lights an animal from above while you look at it from
+     *    the side, and it is why a bell over your eyeline glows and the same
+     *    bell below it does not.
+     *  - it *reddens with path length*. Scattering is wavelength-dependent;
+     *    blue is scattered out of the beam first, so the longer the path the
+     *    warmer what survives. On a jellyfish this is very visible: the thin
+     *    crown transmits nearly white and the thick shoulder transmits amber.
+     *
+     * The thickness below is the path a ray takes through the dome at this point: short
+     * where the sheet faces you, long where it is edge-on, and longer still
+     * through the crown, which is where the animal is deepest front to back.
+     */
+    float thickness = mix(0.25, 1.0, facing) * (1.0 + 0.9 * (1.0 - vRim));
+    // Forward scatter: the lobe around the direction the light is travelling.
+    float forward = pow(max(dot(V, -L), 0.0), 3.0);
+    // Back scatter, much weaker and much broader — the diffuse glow the tissue
+    // has from every direction.
+    float wrap = max(0.0, (dot(vNormalW, L) + 0.6) / 1.6);
+    float sss = (0.62 * forward + 0.38 * wrap) * exp(-thickness * 0.85) * lit;
+
     // The radial stripes. Every bell in the reference has them — the canals
     // running from the crown to the rim — and they are most of what says
     // "jellyfish" rather than "translucent dome" at this size. Counted off the
@@ -396,6 +428,18 @@ const bellFragment = /* glsl */ `
     // you should be able to see the water, the marine snow and the animal's own
     // far side through the face of a bell, and only the silhouette — where the
     // sight-line runs along the sheet — should go anywhere near solid.
+    /*
+     * ...and what the scattering carries out with it, which is the warm half.
+     *
+     * Added rather than mixed, because it is light and light adds, and taken
+     * from the pigment ramp at a position set by the path length: a short path
+     * fetches the ramp's pale top, a long one its deep amber. That is the
+     * reddening described above, and it is read out of the measured population
+     * rather than invented, so the animal still cannot leave the palette.
+     */
+    vec3 deep = texture2D(uRamp, vec2(clamp(1.0 - thickness * 0.42, 0.05, 0.95), 0.5)).rgb;
+    col += deep * sss * 0.42 * (0.5 + 0.5 * stain);
+
     // A cold rim off the far side.
     //
     // The tank's light is a ceiling light, and everything in the picture is lit
