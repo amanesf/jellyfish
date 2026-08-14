@@ -164,7 +164,11 @@ const FilterShader = {
       // transpose instead, which silently un-aligned the kernel from the
       // orientation it had just measured and turned the whole filter into a
       // plain blur.
-      const int R = 4;
+      // Three, not four. This is a 2R+1 square of taps per pixel over the whole
+      // frame — 81 of them at R=4, against 49 at R=3 — and it is the single most
+      // expensive thing in the post chain. The brush mark it leaves is a little
+      // finer at 3, which at this resolution is not a loss.
+      const int R = 3;
       for (int j = -R; j <= R; j++) {
         for (int i = -R; i <= R; i++) {
           vec2 u = vec2(float(i), float(j)) / float(R);

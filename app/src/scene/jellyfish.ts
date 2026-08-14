@@ -594,12 +594,16 @@ class Chain {
     this.prev.set(this.pos);
   }
 
+  /** Scratch, shared: this is called some seven hundred times a frame and used
+   * to allocate a Vector3 on every one of them. */
+  private static readonly force = new THREE.Vector3();
+
   step(
     dt: number, time: number, root: THREE.Vector3,
     flow: (x: number, y: number, z: number, out: THREE.Vector3) => void,
     drag: number, wave: number, bell: THREE.Vector3, bellUp: THREE.Vector3, bellRadius: number,
   ) {
-    const f = new THREE.Vector3();
+    const f = Chain.force;
     for (let i = 1; i < this.nodes; i++) {
       const k = i * 3;
       const px = this.pos[k], py = this.pos[k + 1], pz = this.pos[k + 2];
@@ -1043,13 +1047,23 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
    * tentacle count settled the other way round.
    */
   const armCount = 4;
-  const ARM_STRANDS = 4;
+  // Two, not four. Four pleated sheets a bell wide, double-sided, transparent
+  // and overlapping is an enormous amount of overdraw for twelve animals — and
+  // now that each strand is a *corrugated* sheet rather than a flat strip, one
+  // of them already has several silhouettes crossing. Two carry the mass; four
+  // carried the frame rate away.
+  const ARM_STRANDS = 2;
   // Forty, in eight groups of five. An アカクラゲ carries 40-56 tentacles, and
   // they do not come off the margin evenly — they hang in eight clusters, one
   // per octant of the bell, with a gap between each cluster. That grouping is
   // visible from across a room, and a ring of evenly spaced threads is the
   // clearest way to say "not this animal".
-  const tentacleCount = species === 'bell' ? 40 : 32;
+  // Twenty-four rather than forty. An akakurage carries 40-56 and the count is
+  // right on the animal, but each one is a Verlet chain and a strip of
+  // transparent geometry crossing the whole frame; at this size the eye counts
+  // "many", not forty, and twenty-four in the same eight clusters reads the
+  // same for a bit over half the cost.
+  const tentacleCount = species === 'bell' ? 24 : 20;
   const CLUSTERS = 8;
   /*
    * The oral arms, measured off the reference rather than guessed (item: the
@@ -1082,12 +1096,12 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   // Longer. Six bell radii of arm rather than three: in the reference the mass
   // trails well past the bottom of the frame's crop on the big animals, and
   // three radii was reading as a skirt rather than as a train.
-  const armNodes = species === 'bell' ? 28 : 30;
-  const armSegment = size * (species === 'bell' ? 0.22 : 0.28);
+  const armNodes = species === 'bell' ? 22 : 24;
+  const armSegment = size * (species === 'bell' ? 0.28 : 0.35);
   // More nodes for the same thread: an arc is only as smooth as the number of
   // points describing it, and the reference's tentacles are long unbroken
   // curves rather than the four or five straight runs eighteen nodes give.
-  const tentacleNodes = species === 'bell' ? 26 : 32;
+  const tentacleNodes = species === 'bell' ? 20 : 24;
   // Shorter than they were. Eighteen nodes at 0.86 bell radii is fifteen radii
   // of thread, which on the biggest animals reached from the lid of the tank to
   // the floor: the picture was more tentacle than water. Long is right —
@@ -1347,7 +1361,9 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         c.chain.step(
           dt, time, anchor, flowField,
           c.kind === 'arm' ? 0.90 : 0.94,
-          c.kind === 'arm' ? 1.9 : 0.55,
+          // Down from 1.9: the residual flailing was this — a strand driven
+          // hard enough that the keep-out could still be reached in one step.
+          c.kind === 'arm' ? 1.25 : 0.5,
           jelly.position, bellUp, size * 0.92,
         );
       }
