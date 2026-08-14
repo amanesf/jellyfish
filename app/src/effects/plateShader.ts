@@ -193,27 +193,6 @@ export const PlateShader = {
       float breathe = 0.72 + 0.28 * sin(uTime * 0.21 + vUv.y * 5.3);
       col += vec3(0.86, 0.93, 1.0) * spec * breathe * 0.95;
 
-      /*
-       * The seam.
-       *
-       * A cylinder this size is not blown in one piece — it is rolled from
-       * flat sheet and bonded, and there is a join running its full height.
-       * On a real one you cannot miss it: the bond line is a hairline of
-       * slightly different index, so it catches the light a little differently
-       * along its whole length and the image behind it steps sideways by a
-       * pixel or two.
-       *
-       * One line, off to one side where the eye finds it without it dividing
-       * the picture, and thin enough to be a manufacturing fact rather than a
-       * graphic. It is the sort of detail that makes a rendered object read as
-       * a made thing.
-       */
-      float seam = exp(-pow((u - 0.52) / 0.006, 2.0)) * inTank;
-      col += vec3(0.55, 0.68, 0.82) * seam * 0.30;
-      // ...and the same line, a shade darker just beside it, which is the
-      // bond's own shadow. A bright line alone reads as a scratch.
-      col -= vec3(0.10, 0.13, 0.16) * exp(-pow((u - 0.535) / 0.008, 2.0)) * inTank;
-
       gl_FragColor = vec4(col, 1.0);
     }
   `,
