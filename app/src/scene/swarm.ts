@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { TANK_HEIGHT } from '../core/tank';
-import { createJellyfish, pulse, rand, sharedTextures, type Jellyfish, type Species } from './jellyfish';
+import { createJellyfish, rand, sharedTextures, type Jellyfish, type Species } from './jellyfish';
 
 /**
  * The population, and the reason the tank never repeats (plan.md §1, §8.2).
@@ -123,7 +123,11 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
 
   const flowField = (x: number, y: number, z: number, out: THREE.Vector3) => {
     curl(x, y, z, simTime, out);
-    out.multiplyScalar(0.9 + flowNow * 2.4);
+    // Slower (item ③). The tank this is copied from is a still one: the water
+    // moves a bell's width in a few seconds, not in one. At the old 0.9 + 2.4f
+    // the whole population crossed the frame while you watched, which reads as
+    // a current rather than as water.
+    out.multiplyScalar(0.55 + flowNow * 1.5);
     // The tank is stirred from above, so there is a slow downwelling at the
     // wall and a rise up the middle. It is also what keeps animals off the
     // glass without a wall force that would look like a wall force.
@@ -155,9 +159,13 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
     const size = species === 'bell'
       ? 0.166 + rand(seed, 3) * 0.074
       : 0.088 + rand(seed, 3) * 0.060;
+    // Slower, and slower than the textbook 0.8-1.4 Hz on purpose: those numbers
+    // are for a small animal in open water, and what a big one in a display
+    // tank does is closer to a stroke every two seconds. The rests between
+    // bouts are in scene/jellyfish.ts.
     const period = species === 'bell'
-      ? 1.05 + rand(seed, 4) * 0.5
-      : 1.5 + rand(seed, 5) * 0.9;
+      ? 1.55 + rand(seed, 4) * 0.75
+      : 2.10 + rand(seed, 5) * 1.20;
     const jelly = createJellyfish({ species, seed, size, period }, shared);
 
     const angle = rand(seed, 6) * Math.PI * 2;
@@ -277,11 +285,13 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
         // Thrust: the bell's contraction pushes it along its own axis. The
         // pulse is asymmetric (jellyfish.ts), so this is a series of surges,
         // and the drag between them is what makes it coast.
-        const phase = time / (j.species === 'bell' ? 1.2 : 1.9) + rand(j.seed, 1);
-        const p = pulse(phase);
-        const thrust = Math.max(0, p - pulse(phase - dt / 1.2)) / Math.max(dt, 1e-4);
+        // From the bell's own phase (jellyfish.ts), which is the only place
+        // that knows it: this used to recompute a pulse here from the clock
+        // with periods of its own — 1.2 and 1.9, which matched nothing — so the
+        // animal surged on a beat its bell was not keeping, and it surged
+        // straight through the rests.
         tmp.set(0, 1, 0).applyQuaternion(j.group.quaternion);
-        j.velocity.addScaledVector(tmp, thrust * dt * j.size * 1.5);
+        j.velocity.addScaledVector(tmp, j.thrust * dt * j.size * 1.5);
 
         flowField(j.position.x, j.position.y, j.position.z, force);
         j.velocity.addScaledVector(force, dt * 0.55);
@@ -296,12 +306,35 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
         // the floor is that it pulses, and what brings it down is nothing.
         j.position.addScaledVector(j.velocity, dt);
 
-        // Heading follows the flow, slowly, and never quite gets there. A
-        // jellyfish that snapped to its velocity would read as a fish.
+        /*
+         * Heading (item ⑥).
+         *
+         * It follows the flow, slowly, and never quite gets there — a jellyfish
+         * that snapped to its velocity would read as a fish. What is new is that
+         * it is no longer *held upright*: the old code pulled every target 72%
+         * of the way back to straight up, so the animals rocked a few degrees
+         * and nothing in the tank ever turned over. Real ones do, constantly.
+         * A jellyfish has no way to right itself except by pulsing, so while it
+         * is resting the water simply rolls it, and it can end up on its side or
+         * fully inverted, and then swim off downward until it turns again.
+         *
+         * So the upright bias is the animal's own swimming: full while it is
+         * pulsing, gone while it is resting, and slightly negative for a while
+         * on some individuals — `keel` swings slowly between about -0.35 and
+         * 0.85 on a per-animal cycle — which is what actually puts one upside
+         * down rather than merely tilted.
+         */
+        const keel = 0.85 - 1.2 * (0.5 + 0.5 * Math.sin(time * 0.021 + rand(j.seed, 21) * 6.28))
+                     * (1 - j.activity) * (0.35 + rand(j.seed, 22) * 0.75);
         tmp.copy(force).normalize();
         if (tmp.lengthSq() > 1e-6) {
-          q.setFromUnitVectors(up, tmp.lerp(up, 0.72).normalize());
-          j.group.quaternion.slerp(q, 1 - Math.pow(0.55, dt));
+          // Turning is much slower while resting: nothing is driving it but the
+          // water, and the water turns a jellyfish over the way it turns a leaf.
+          tmp.lerp(up, Math.max(-1, Math.min(1, keel)));
+          if (tmp.lengthSq() > 1e-6) {
+            q.setFromUnitVectors(up, tmp.normalize());
+            j.group.quaternion.slerp(q, 1 - Math.pow(0.55, dt * (0.25 + 0.75 * j.activity)));
+          }
         }
 
         // Keep it off the glass and the pipe without anything that reads as a

@@ -65,10 +65,44 @@ export function pulse(phase: number): number {
   return 1 - u * u * (3 - 2 * u);
 }
 
+/**
+ * The bell's shape at one instant, on the CPU.
+ *
+ * The vertex shader is the authority on where the skirt is; this is the same
+ * arithmetic, evaluated for one angle at the rim, so the tentacles can be hung
+ * off the rim *where the rim actually is* rather than off a circle of fixed
+ * radius. Keep the two in step — every constant here has a twin in bellVertex.
+ */
+export function rimPoint(
+  angleFrac: number, pulse: number, seed: number, time: number, lag: number,
+  aRim: number, out: THREE.Vector3,
+): void {
+  const ang = angleFrac * Math.PI * 2;
+  let p = pulse - aRim * 0.32 * lag;
+  p = p - Math.floor(p);
+  const smooth = (u: number) => { const c = Math.min(1, Math.max(0, u)); return c * c * (3 - 2 * c); };
+  const contract = p < 0.25 ? smooth(p / 0.25) : 1 - smooth((p - 0.25) / 0.75);
+
+  const lobes = Math.cos(ang * 16 + seed * 6.28 + Math.sin(time * 0.35 + seed) * 0.6);
+  const scallop = 1 - 0.055 * lobes * aRim * aRim;
+  const sweep = aRim * 1.5707963 * 1.26;
+  const radius = Math.sin(sweep);
+  const height = Math.cos(sweep) * 0.67;
+  const squeeze = 1 - 0.24 * contract;
+  const stretch = 1 + 0.30 * contract;
+  const curl = 0.34 * contract * aRim * aRim;
+  out.set(
+    Math.cos(ang) * radius * scallop * squeeze,
+    height * stretch - curl - 0.16 * aRim * aRim * aRim + 0.075 * lobes * aRim * aRim,
+    Math.sin(ang) * radius * scallop * squeeze,
+  );
+}
+
 const bellVertex = /* glsl */ `
   uniform float uPulse;
   uniform float uSeed;
   uniform float uTime;
+  uniform float uLag;    // 1 while swimming, 0 while the bell rests
   varying float vRim;      // 0 at the crown, 1 at the rim
   varying vec3 vNormalW;
   varying vec3 vWorld;
@@ -86,7 +120,14 @@ const bellVertex = /* glsl */ `
     // rim is still finishing the last stroke when the crown starts the next —
     // which is the whole of why a bell looks like it is flowing rather than
     // opening and shutting.
-    float lag = aRim * 0.32;
+    //
+    // The lag is scaled by uLag, which falls to zero when the animal stops
+    // swimming. It has to: with a fixed lag there is no phase at which the
+    // whole bell is relaxed — the rim is always a third of a stroke behind the
+    // crown — so a bell frozen at any phase is a bell frozen mid-stroke. Letting
+    // the lag run out as the animal comes to rest lets the rim catch up with
+    // the crown, and the bell parks *open*, which is what a resting one does.
+    float lag = aRim * 0.32 * uLag;
     float p = uPulse - lag;
     p = p - floor(p);
     float contract = p < 0.25 ? smoothstep(0.0, 1.0, p / 0.25)
@@ -192,7 +233,19 @@ const bellFragment = /* glsl */ `
     // recognisable thing about the animal. Narrow, too — the line is thin and
     // the gap between lines is wide, which a plain raised cosine cannot say;
     // raising it to a power puts the width where the reference has it.
-    float canal = pow(0.5 + 0.5 * cos(vAngle * 87.9646), 9.0);
+    // Sixteen, because the animal is an アカクラゲ (Chrysaora pacifica) and
+    // sixteen radial brown bands is the field mark it is named for — a 9-15 cm
+    // bell with sixteen stripes running from the crown out to the margin, and
+    // the tentacles hanging in eight groups between them. Fourteen was a guess
+    // off the painting; sixteen is the animal.
+    //
+    // The stripe is a wedge, not a stripe: it is a hair at the crown and widens
+    // as it runs out, because it follows a radial canal that widens with the
+    // bell. Raising the cosine to a power that *falls* with vRim is what draws
+    // that, and it is why the reference's bells look drawn on rather than
+    // striped like a beach ball.
+    float band = 0.5 + 0.5 * cos(vAngle * 100.5310);
+    float canal = pow(band, mix(16.0, 4.5, smoothstep(0.1, 1.0, vRim)));
     // The canals carry a lot more of the bell than they were given. In the
     // reference they are the *structure* of the animal — hard bright lines from
     // the crown to the rim over a saturated ground — and at 0.10 they were a
@@ -219,6 +272,17 @@ const bellFragment = /* glsl */ `
     s = clamp(mix(s, banded, 0.34), 0.0, 1.0);
 
     vec3 col = texture2D(uRamp, vec2(s, 0.5)).rgb;
+
+    // The stripes are brown, not merely dark.
+    //
+    // Darkening alone gives a bell with shadows on it; an アカクラゲ's bands are
+    // a *pigment* — reddish brown over a near-colourless bell — so they have to
+    // move the hue, not only the level. Mixed toward the ramp's own deep end
+    // (which is where the measured artwork keeps its saturated orange-browns)
+    // rather than toward a colour invented here, so the animal cannot leave the
+    // measured palette.
+    float mark = canal * smoothstep(0.04, 0.34, vRim);
+    col = mix(col, texture2D(uRamp, vec2(s * 0.30, 0.5)).rgb, mark * 0.62);
 
     // The wet sheen on the crown.
     //
@@ -264,7 +328,11 @@ const bellFragment = /* glsl */ `
     // ...and the crown highlight is emitted in it, which is what makes the
     // bloom halo around each animal come up in the lamp's colour too.
     col += uLed.rgb * sheen * lit * uLed.w * 0.55;
-    float body = 0.30 + 0.50 * facing + 0.24 * smoothstep(0.62, 1.0, vRim);
+    // Thinner than it was. What the reference has and this did not is 透明感:
+    // you should be able to see the water, the marine snow and the animal's own
+    // far side through the face of a bell, and only the silhouette — where the
+    // sight-line runs along the sheet — should go anywhere near solid.
+    float body = 0.20 + 0.46 * facing + 0.30 * smoothstep(0.62, 1.0, vRim);
     gl_FragColor = vec4(col, uFade * clamp(body, 0.0, 1.0));
   }
 `;
@@ -489,6 +557,14 @@ export interface Jellyfish {
   seed: number;
   size: number;
   fade: number;
+  /** How hard the bell is pushing right now, along its own axis. Written by
+   * `step`; the swarm reads it rather than recomputing the pulse from the clock,
+   * which it used to do with periods of its own that did not match these. */
+  thrust: number;
+  /** 1 while swimming, 0 while resting. The swarm uses it to stop steering an
+   * animal that is not swimming — a jellyfish at rest goes where the water
+   * takes it, including over. */
+  activity: number;
   step: (dt: number, time: number, flow: number, flowField: (x: number, y: number, z: number, out: THREE.Vector3) => void) => void;
   dispose: () => void;
 }
@@ -510,6 +586,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
       uPulse: { value: rand(seed, 1) },
       uSeed: { value: rand(seed, 2) },
       uTime: { value: 0 },
+      uLag: { value: 1 },
       uFlow: { value: 0.5 },
       uFade: { value: 0 },
       uRamp: { value: shared.bell },
@@ -544,35 +621,54 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   // they are a dense frilled mass hanging a bell-and-a-half below the animal
   // and half as wide as the bell itself. That mass is most of what a sea nettle
   // *is* at this size, and the app simply did not have it.
-  const armCount = species === 'bell' ? 5 : 4;
-  // The reference's animals trail a *curtain* — twenty-odd threads at least,
-  // crossing each other and streaming much further than the bell is wide.
-  const tentacleCount = species === 'bell' ? 24 : 28;
+  // Four, which is what a Chrysaora has: four long frilled oral arms hanging
+  // from the corners of the mouth, not a ring of them.
+  const armCount = 4;
+  // Forty, in eight groups of five. An アカクラゲ carries 40-56 tentacles, and
+  // they do not come off the margin evenly — they hang in eight clusters, one
+  // per octant of the bell, with a gap between each cluster. That grouping is
+  // visible from across a room, and a ring of evenly spaced threads is the
+  // clearest way to say "not this animal".
+  const tentacleCount = species === 'bell' ? 40 : 32;
+  const CLUSTERS = 8;
   const armNodes = species === 'bell' ? 15 : 18;
   const armSegment = size * (species === 'bell' ? 0.155 : 0.24);
   const tentacleNodes = species === 'bell' ? 18 : 24;
   const tentacleSegment = size * (species === 'bell' ? 0.86 : 1.35);
 
-  const chains: { chain: Chain; kind: 'arm' | 'tentacle'; anchor: THREE.Vector3 }[] = [];
+  /**
+   * Where a strand is attached, as a place *on the bell* rather than as a fixed
+   * offset from the animal's middle.
+   *
+   * This is item ⑤, and it was the thing making the tentacles look glued on: a
+   * strand hung from a constant point at 0.90 radii, so when the bell squeezed
+   * to 0.76 of its width and curled its skirt under, the rim moved and the
+   * threads did not. The animal pulsed inside a stationary curtain. An anchor
+   * is now an angle and a height *up the dome*, and its position is read off
+   * the same shape function the vertex shader draws — so the rim tows its own
+   * tentacles, and the little flick each stroke puts into them is the bell's
+   * own movement rather than anything scripted.
+   */
+  interface Anchor { angle: number; rim: number; }
+  const chains: { chain: Chain; kind: 'arm' | 'tentacle'; at: Anchor }[] = [];
   const root = new THREE.Vector3();
   for (let i = 0; i < armCount; i++) {
-    const a = (i / armCount) * Math.PI * 2 + rand(seed, 10 + i) * 0.5;
     // Under the crown, inside the skirt — the mouth is at the middle of the
-    // underside, not on the rim.
-    const anchor = new THREE.Vector3(Math.cos(a) * size * 0.26, -size * 0.30, Math.sin(a) * size * 0.30);
-    chains.push({ chain: new Chain(armNodes, armSegment, root), kind: 'arm', anchor });
+    // underside, not on the rim, so these hang from half way down the dome.
+    const angle = i / armCount + rand(seed, 10 + i) * 0.06;
+    chains.push({ chain: new Chain(armNodes, armSegment, root), kind: 'arm', at: { angle, rim: 0.42 } });
   }
   for (let i = 0; i < tentacleCount; i++) {
-    const a = (i / tentacleCount) * Math.PI * 2 + rand(seed, 30 + i) * 0.4;
-    // On the rim itself, which now hangs below the bell's widest point: the
-    // threads used to start at the equator and so appeared to sprout from the
-    // middle of the animal's face.
-    const anchor = new THREE.Vector3(Math.cos(a) * size * 0.90, -size * 0.40, Math.sin(a) * size * 0.90);
+    // Eight clusters, five or so strands each, with the gaps between clusters
+    // wider than the gaps within one.
+    const cluster = Math.floor(i / (tentacleCount / CLUSTERS));
+    const within = (i % (tentacleCount / CLUSTERS)) / (tentacleCount / CLUSTERS);
+    const angle = (cluster + 0.18 + within * 0.64 + rand(seed, 30 + i) * 0.06) / CLUSTERS;
     // Each strand a different length. Identical strands drift as one sheet,
     // which is the single clearest tell that a jellyfish is a simulation: real
     // tentacles are ragged and cross each other.
     const vary = 0.65 + rand(seed, 50 + i) * 0.8;
-    chains.push({ chain: new Chain(tentacleNodes, tentacleSegment * vary, root), kind: 'tentacle', anchor });
+    chains.push({ chain: new Chain(tentacleNodes, tentacleSegment * vary, root), kind: 'tentacle', at: { angle, rim: 1 } });
   }
 
   // One ribbon mesh for the arms and one for the tentacles, so the whole
@@ -635,6 +731,15 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   ribbonGroup.add(arms.mesh, tentacles.mesh);
   ribbonGroup.matrixAutoUpdate = false;
 
+  // The swimming state (see `step`). Integrated, not evaluated — a resting
+  // animal has no closed-form phase.
+  let phase = rand(seed, 1);
+  let activity = 1;
+  let restLeft = rand(seed, 12) * 14;
+  let strokesLeft = 2 + Math.floor(rand(seed, 13) * 6);
+  let lastPulse = pulse(phase);
+  const anchor = new THREE.Vector3();
+
   const jelly: Jellyfish = {
     group,
     ribbons: ribbonGroup,
@@ -644,9 +749,59 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
     seed,
     size,
     fade: 0,
+    thrust: 0,
+    activity: 1,
     step(dt, time, flow, flowField) {
-      const phase = time / period + rand(seed, 1);
+      /*
+       * The pulse, and the *rests* between bouts of it (item ③).
+       *
+       * The phase used to be `time / period`, which is a metronome: every
+       * animal in the tank pulsed forever at its own fixed rate and none of
+       * them ever stopped. Real ones do stop. A sea nettle swims in bouts —
+       * a few strokes to climb, then it stops pulsing entirely and hangs
+       * there, drifting and turning over in whatever the water is doing,
+       * before it starts again. The stillness is most of what makes watching
+       * one restful, and a tank of ceaseless pumping is a tank of machinery.
+       *
+       * So the phase is integrated rather than evaluated, and it only advances
+       * while the animal is swimming. A rest is taken at the *end* of a stroke
+       * (an integer phase), lasts a few seconds to the better part of a minute,
+       * and both the decision and its length come out of the seed, so a frozen
+       * frame still reproduces.
+       */
+      const stroke = Math.floor(phase);
+      if (restLeft > 0) {
+        restLeft -= dt;
+        // Down over about a third of a second, so the bell coasts to a stop
+        // rather than stalling — and uLag with it, which lets the rim catch up
+        // and the bell park open (see bellVertex).
+        activity = Math.max(0, activity - dt * 3.0);
+      } else {
+        // Back up over about a second: the first stroke out of a rest is a
+        // slow one.
+        activity = Math.min(1, activity + dt);
+        const next = phase + (dt / period) * activity;
+        if (Math.floor(next) > stroke) {
+          phase = Math.floor(next);
+          // Bouts of two to seven strokes, then a rest of 4 to 26 seconds.
+          strokesLeft--;
+          if (strokesLeft <= 0) {
+            restLeft = 4 + rand(seed, 600 + (stroke % 71)) * 22;
+            strokesLeft = 2 + Math.floor(rand(seed, 700 + (stroke % 67)) * 6);
+          }
+        } else {
+          phase = next;
+        }
+      }
+      jelly.activity = activity;
+
+      // What the bell is pushing with, from the phase the bell actually has.
+      const pNow = pulse(phase);
+      jelly.thrust = Math.max(0, pNow - lastPulse) / Math.max(dt, 1e-4);
+      lastPulse = pNow;
+
       bellMat.uniforms.uPulse.value = phase;
+      bellMat.uniforms.uLag.value = activity;
       bellMat.uniforms.uTime.value = time;
       bellMat.uniforms.uFlow.value = flow;
       bellMat.uniforms.uFade.value = jelly.fade;
@@ -658,9 +813,14 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         ribbons.material.uniforms.uFade.value = jelly.fade;
       }
 
-      const anchor = new THREE.Vector3();
+      // Hung off the bell where the bell *is* this frame: the same shape
+      // function the vertex shader draws, evaluated at each strand's angle. The
+      // squeeze, the curl of the skirt and the scallop all move the anchor, so
+      // a stroke tows the whole curtain with it.
+      const seedAngle = bellMat.uniforms.uSeed.value as number;
       for (const c of chains) {
-        anchor.copy(c.anchor).applyQuaternion(group.quaternion).add(jelly.position);
+        rimPoint(c.at.angle, phase, seedAngle, time, activity, c.at.rim, anchor);
+        anchor.multiplyScalar(size).applyQuaternion(group.quaternion).add(jelly.position);
         c.chain.step(dt, anchor, flowField, c.kind === 'arm' ? 0.90 : 0.94);
       }
 
