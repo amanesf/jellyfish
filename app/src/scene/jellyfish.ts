@@ -693,11 +693,31 @@ class Chain {
       //
       // Only the part above the animal's own underside is solid. Below that
       // line a strand may go where it likes.
-      if (dx * bellUp.x + dy * bellUp.y + dz * bellUp.z < -0.25 * bellRadius) continue;
-      const d = Math.sqrt(d2), push = bellRadius / d;
-      this.pos[k] = bell.x + dx * push;
-      this.pos[k + 1] = bell.y + dy * push;
-      this.pos[k + 2] = bell.z + dz * push;
+      /*
+       * Softly, and this is what stopped the thrashing.
+       *
+       * The hemisphere used to end at a hard line: a node a hair below it was
+       * free, and the distance constraints would pull it a hair above, where it
+       * was ejected to the bell's surface at full strength — and then fell back
+       * below, and was ejected again. A chain fed an impulse at its own step
+       * rate does not settle, it whips, and with the arms waved as hard as they
+       * are the whip ran the length of the strand. That was the flailing.
+       *
+       * Two changes, both about not applying a discontinuous force. The
+       * hemisphere fades over a quarter of the bell's radius rather than
+       * ending, and no single step may move a node more than a fifteenth of
+       * that radius — so a strand that finds itself deep inside the bell walks
+       * out over several frames instead of being flung out of it.
+       */
+      const above = (dx * bellUp.x + dy * bellUp.y + dz * bellUp.z) / bellRadius;
+      const solid = Math.min(1, Math.max(0, (above + 0.30) / 0.25));
+      if (solid <= 0) continue;
+      const d = Math.sqrt(d2);
+      const want = (bellRadius - d) * solid;
+      const step = Math.min(want, bellRadius * 0.067) / d;
+      this.pos[k] += dx * step;
+      this.pos[k + 1] += dy * step;
+      this.pos[k + 2] += dz * step;
     }
   }
 }

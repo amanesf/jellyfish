@@ -98,7 +98,7 @@ export const DofShader = {
      * is two radii deep and the animals in it are 40 to 80 px across, so a
      * radius past three or four stops reading as a lens and starts reading as
      * a smudge. */
-    uMaxRadius: { value: 8.0 },
+    uMaxRadius: { value: 5.0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -135,8 +135,13 @@ export const DofShader = {
         // Its own blur, not this pixel's: a tap that is in focus does not
         // belong in an out-of-focus pixel's average, or every sharp edge grows
         // a halo of itself.
+        // A steeper cut than it was. At smoothstep(0, 0.35) a tap only a
+        // little out of focus counted almost fully, so a barely-blurred pixel
+        // still averaged sixteen neighbours and the whole picture lost its
+        // edge. Only a tap that is genuinely out of focus belongs in the
+        // average.
         float w = texture2D(tCoC, uv).r;
-        w = smoothstep(0.0, 0.35, w);
+        w = smoothstep(0.20, 0.62, w);
         sum += texture2D(tDiffuse, uv).rgb * w;
         weight += w;
       }
