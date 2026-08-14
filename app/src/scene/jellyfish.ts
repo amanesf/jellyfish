@@ -691,63 +691,60 @@ class Chain {
 }
 
 const veilVertex = /* glsl */ `
-  attribute float aSide;
-  attribute float aAlong;
+  attribute float aSide;     // -1..1 across the sheet
+  attribute float aAcross;   // 0..1 across the sheet
+  attribute float aAlong;    // 0..1 down its length
   attribute vec3 aTangent;
   uniform float uWidth;
-  uniform float uFrill;
+  uniform float uFrill;      // 1 for an oral arm, 0 for a tentacle
   uniform float uSeed;
+  uniform float uTime;
   uniform vec3 uCamPos;
   varying float vAlong;
   varying float vSide;
   varying float vTurn;
+  varying float vFacing;
   varying vec3 vWorld;
 
   void main() {
     vec3 world = position;
+    vec3 T = normalize(aTangent);
     vec3 view = normalize(uCamPos - world);
-    vec3 side = normalize(cross(normalize(aTangent), view));
-    // Tapered: an oral arm is widest where it leaves the bell and comes to
-    // nothing at the tip.
-    float w = uWidth * (1.0 - aAlong) * (1.0 - aAlong * 0.4);
 
     /*
-     * The ruffle, in the *silhouette* — which is the thing three attempts at
-     * this missed and the reference makes obvious.
+     * An oral arm is a *pleated sheet*, and this is the fourth attempt at it —
+     * the first three failed for the same reason, which is worth stating.
      *
-     * Zoom into 1786667042546.png and an oral arm is a strip of white crepe
-     * paper: its edge is torn, lumpy and scalloped, never straight for the
-     * length of a bell, and it is that ragged outline you recognise from across
-     * a room. Every version of this so far drew a smooth-edged ribbon and put
-     * the frill in the *shading* — stripes on a straight strip — which is why
-     * it kept reading as a painted band however the brightness was tuned.
+     * They drew a flat strip turned to face the camera and put the ruffle into
+     * its width and its shading. A billboard has no thickness and no orientation
+     * of its own, so its outline is whatever curve you modulate the width with:
+     * smooth, however hard the modulation is driven, because a curve is what it
+     * is. What makes a real frill recognisable is not a wavy outline — it is
+     * that the sheet is *corrugated*, so a run of folds faces the light while
+     * the ones between them face away, and the silhouette is the ragged line
+     * where those folds end at different depths.
      *
-     * Two things do it, and both have to be in the geometry:
-     *
-     *  - the width varies along the arm at two incommensurate rates, so the
-     *    edge is a run of lobes and pinches rather than a taper.
-     *  - the arm twists. A frilled sheet in water turns over on itself every
-     *    few centimetres, and each time it turns edge-on it nearly disappears
-     *    and then opens out again. The ribbon is billboarded at the camera, so
-     *    a twist is exactly a periodic collapse of its width — which is also
-     *    why a real one looks like a run of separate scraps when it is one
-     *    continuous sheet.
+     * So the sheet is given a frame of its own instead of the camera's: a
+     * reference direction fixed per strand, from which a side vector and a
+     * surface normal are built. The pleats then displace along that normal —
+     * real corrugations in space, not a pattern — and they turn with the arm,
+     * disappear when it edges away, and cut their own outline. The cost is one
+     * cross product and six extra vertices per node.
      */
-    /*
-     * The frequencies are bounded by the mesh, and the last version's were not.
-     *
-     * This is why three attempts at the ruffle produced thin streaks instead of
-     * a frilled sheet. An arm carries 22 nodes; a width modulation at 26 cycles
-     * along it is 1.2 cycles *per segment*, and one at 61 is nearly three. The
-     * geometry cannot represent a fold it has no vertex for — what came out was
-     * not a lobed edge but aliasing, a random width per node, which is exactly
-     * the wispy noise it looked like.
-     *
-     * Nyquist is 11 cycles over 22 nodes, and a shape needs several vertices
-     * per lobe to read as a curve rather than a zigzag: 5 and 9 give four or
-     * five vertices to a lobe, which is a scallop. The twist is slower still —
-     * a sheet turns over three times down its length, not nine.
-     */
+    vec3 ref = normalize(vec3(cos(uSeed * 6.2831853), 0.42, sin(uSeed * 6.2831853)));
+    vec3 sheetSide = normalize(cross(T, ref));
+    // Degenerate where the strand runs along ref; fall back to the billboard.
+    if (dot(sheetSide, sheetSide) < 0.5) sheetSide = normalize(cross(T, view));
+    vec3 sheetNormal = normalize(cross(T, sheetSide));
+    vec3 side = mix(normalize(cross(T, view)), sheetSide, uFrill);
+
+    // Tapered: widest where it leaves the mouth, nothing at the tip.
+    float w = uWidth * (1.0 - aAlong) * (1.0 - aAlong * 0.4);
+
+    // The slow lobes and the twist that shape the whole strand, at frequencies
+    // the mesh can actually carry (five and nine cycles over twenty-odd nodes;
+    // anything faster aliases into noise, which is what three earlier versions
+    // of this were doing).
     float lobes = 0.58 + 0.42 * sin(aAlong * 5.0 + uSeed * 6.28)
                        + 0.22 * sin(aAlong * 9.0 - uSeed * 3.10);
     float twist = 0.34 + 0.66 * abs(cos(aAlong * 3.2 + uSeed * 5.7));
@@ -755,6 +752,23 @@ const veilVertex = /* glsl */ `
     vTurn = twist;
 
     world += side * aSide * w;
+
+    /*
+     * The pleats. Four folds across the sheet, travelling slowly down it so the
+     * frill is never still, and deeper toward the free edge than at the middle
+     * — which is how a gathered edge behaves, and it is what makes the outline
+     * ragged rather than merely wavy.
+     */
+    float phase = aAcross * 25.13 + aAlong * 7.0 - uTime * 0.55 + uSeed * 4.0;
+    float depth = w * 0.62 * (0.35 + 0.65 * abs(aSide));
+    world += sheetNormal * sin(phase) * depth * uFrill;
+
+    // The fold's own facing, for the shading: where the corrugation turns
+    // toward the light it is bright and between folds it is dark, and that
+    // alternation *is* the frill.
+    vec3 N = normalize(sheetNormal + sheetSide * cos(phase) * 1.6 * uFrill);
+    vFacing = mix(1.0, abs(dot(N, view)), uFrill);
+
     vAlong = aAlong;
     vSide = aSide;
     vWorld = world;
@@ -767,6 +781,7 @@ const veilFragment = /* glsl */ `
   varying float vAlong;
   varying float vSide;
   varying float vTurn;
+  varying float vFacing;
   varying vec3 vWorld;
   uniform sampler2D uRamp;
   uniform sampler2D uWaterRamp;
@@ -797,8 +812,13 @@ const veilFragment = /* glsl */ `
     // was cut with, or the shading describes a different sheet from the one
     // being drawn. The fast term stays fast — it is per-pixel and it is the
     // crinkle inside a fold, not the fold.
-    float frill = 0.5 + 0.5 * sin(vAlong * 5.0 + vSide * 2.4);
-    frill *= 0.55 + 0.45 * (0.5 + 0.5 * sin(vAlong * 34.0 - vSide * 5.5 + vWorld.y * 6.0));
+    // The fold is now geometry, so the shading reads it rather than inventing
+    // it: vFacing is how square this piece of the sheet is to the eye, and a
+    // corrugation alternates between the two extremes across its width. That
+    // alternation is the frill, and it needs no pattern of its own.
+    float frill = mix(0.5 + 0.5 * sin(vAlong * 5.0 + vSide * 2.4),
+                      1.0 - vFacing, uFrill);
+    frill = clamp(frill, 0.0, 1.0);
     frill = mix(frill, frill * (1.0 - 0.55 * abs(vSide)), uFrill);
     // Kept off the top of the ramp. The veil ramp's last bucket is the
     // brightest thing in the picture by a distance, and the bloom threshold
@@ -1027,8 +1047,11 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   // about two bell diameters below the animal and is nearly a bell wide where
   // it leaves the mouth — a *mass*, not a streamer. Four and a half radii of
   // very thin ribbon was the wrong shape at both ends.
-  const armNodes = species === 'bell' ? 20 : 22;
-  const armSegment = size * (species === 'bell' ? 0.16 : 0.22);
+  // Longer. Six bell radii of arm rather than three: in the reference the mass
+  // trails well past the bottom of the frame's crop on the big animals, and
+  // three radii was reading as a skirt rather than as a train.
+  const armNodes = species === 'bell' ? 28 : 30;
+  const armSegment = size * (species === 'bell' ? 0.22 : 0.28);
   // More nodes for the same thread: an arc is only as smooth as the number of
   // points describing it, and the reference's tentacles are long unbroken
   // curves rather than the four or five straight runs eighteen nodes give.
@@ -1100,26 +1123,41 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   const buildRibbons = (kind: 'arm' | 'tentacle') => {
     const set = chains.filter((c) => c.kind === kind);
     const nodes = set[0].chain.nodes;
-    const verts = set.length * nodes * 2;
+    // Seven vertices across an oral arm, two across a tentacle. A pleat needs
+    // vertices to be folded at: at two you have a flat strip and the fold has
+    // nowhere to live. Seven carries four folds with a vertex on each crest and
+    // each trough, which is the coarsest a corrugation can be and still read as
+    // one. A tentacle is a line and stays a line.
+    const across = kind === 'arm' ? 7 : 2;
+    const verts = set.length * nodes * across;
     const geometry = new THREE.BufferGeometry();
     const position = new Float32Array(verts * 3);
     const tangent = new Float32Array(verts * 3);
     const side = new Float32Array(verts);
+    const acrossAttr = new Float32Array(verts);
     const along = new Float32Array(verts);
     const index: number[] = [];
     for (let c = 0; c < set.length; c++) {
       for (let n = 0; n < nodes; n++) {
-        const base = (c * nodes + n) * 2;
-        side[base] = -1; side[base + 1] = 1;
-        along[base] = along[base + 1] = n / (nodes - 1);
+        const base = (c * nodes + n) * across;
+        for (let k = 0; k < across; k++) {
+          const u = k / (across - 1);
+          acrossAttr[base + k] = u;
+          side[base + k] = u * 2 - 1;
+          along[base + k] = n / (nodes - 1);
+        }
         if (n < nodes - 1) {
-          index.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+          for (let k = 0; k < across - 1; k++) {
+            const a = base + k, b = a + 1, c2 = a + across, d = c2 + 1;
+            index.push(a, b, c2, b, d, c2);
+          }
         }
       }
     }
     geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
     geometry.setAttribute('aTangent', new THREE.BufferAttribute(tangent, 3));
     geometry.setAttribute('aSide', new THREE.BufferAttribute(side, 1));
+    geometry.setAttribute('aAcross', new THREE.BufferAttribute(acrossAttr, 1));
     geometry.setAttribute('aAlong', new THREE.BufferAttribute(along, 1));
     geometry.setIndex(index);
     geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 40);
@@ -1152,7 +1190,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;
-    return { mesh, material, geometry, set, nodes, position, tangent };
+    return { mesh, material, geometry, set, nodes, across, position, tangent };
   };
   const arms = buildRibbons('arm');
   const tentacles = buildRibbons('tentacle');
@@ -1271,14 +1309,14 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
 
       // Copy the chains into the ribbon meshes.
       for (const ribbons of [arms, tentacles]) {
-        const { set, nodes, position, tangent } = ribbons;
+        const { set, nodes, across, position, tangent } = ribbons;
         for (let c = 0; c < set.length; c++) {
           const p = set[c].chain.pos;
           for (let n = 0; n < nodes; n++) {
             const a = Math.max(0, n - 1) * 3, b = Math.min(nodes - 1, n + 1) * 3;
             const tx = p[b] - p[a], ty = p[b + 1] - p[a + 1], tz = p[b + 2] - p[a + 2];
-            for (let s = 0; s < 2; s++) {
-              const v = ((c * nodes + n) * 2 + s) * 3;
+            for (let s = 0; s < across; s++) {
+              const v = ((c * nodes + n) * across + s) * 3;
               position[v] = p[n * 3];
               position[v + 1] = p[n * 3 + 1];
               position[v + 2] = p[n * 3 + 2];
