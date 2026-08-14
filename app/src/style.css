@@ -36,16 +36,70 @@ body::before {
   padding: 28px 14px 56px;
 }
 
+/*
+ * The title, and it is allowed to be the second-brightest thing on the page.
+ *
+ * Set in a mincho face, because the picture is a Japanese illustration and a
+ * system sans reads as a browser chrome label rather than as a title; wide
+ * tracking, because four characters at this size need air to look placed
+ * rather than typed. The colour is not flat — it is a top-lit gradient, the
+ * same direction the tank is lit from — and behind it sits a second copy of
+ * the same glyphs, blurred, which is the glow a lit sign leaves on the wall
+ * around it. A hairline runs out to each side and fades, so the title reads
+ * as engraved on the room rather than floated over it.
+ */
 .title {
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.62em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  margin: 6px 0 6px;
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", serif;
+  font-size: 27px;
+  font-weight: 400;
+}
+
+.title-text {
+  position: relative;
+  letter-spacing: 0.42em;
   /* The last letter's tracking is empty space on the right; without this the
    * title sits visibly left of centre. */
-  text-indent: 0.62em;
-  color: #9db6cd;
-  margin: 0 0 18px;
+  text-indent: 0.42em;
+  background: linear-gradient(180deg, #f2f8ff 0%, #bcd6ee 46%, #6e93b6 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* The glow. A blurred copy of the glyphs, underneath, in the water's own
+ * blue — additive against the near-black page, which is what a lit thing in a
+ * dark room does to the air around it. */
+.title-text::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  color: #7fc4ff;
+  filter: blur(11px);
+  opacity: 0.5;
+  z-index: -1;
+}
+
+.title-mark {
+  flex: 0 1 96px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(150, 195, 230, 0) 0%, rgba(150, 195, 230, 0.45) 100%);
+}
+.title-mark:last-child {
+  background: linear-gradient(90deg, rgba(150, 195, 230, 0.45) 0%, rgba(150, 195, 230, 0) 100%);
+}
+
+.subtitle {
+  margin: 0 0 20px;
   text-align: center;
+  font-size: 8.5px;
+  letter-spacing: 0.5em;
+  text-indent: 0.5em;
+  color: rgba(140, 175, 205, 0.5);
 }
 
 /* The picture keeps the reference frame's aspect exactly (896x1200). Its
@@ -163,6 +217,7 @@ body::before {
  * in the app assumes it (scripts/README.md). */
 .fit-frame #page { max-width: none; padding: 0; }
 .fit-frame .title,
+.fit-frame .subtitle,
 .fit-frame .console { display: none; }
 .fit-frame body::before { display: none; }
 .fit-frame .stage { border-radius: 0; height: 100vh; aspect-ratio: auto; }
