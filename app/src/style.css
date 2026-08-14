@@ -132,6 +132,25 @@ body::before {
   box-shadow: 0 0 8px rgba(150, 200, 240, 0.55);
 }
 
+.toggle {
+  justify-self: start;
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--dim);
+  background: transparent;
+  border: 1px solid rgba(160, 195, 225, 0.24);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.toggle.on {
+  color: #06121f;
+  background: #cfe0f2;
+  border-color: #cfe0f2;
+  box-shadow: 0 0 12px rgba(150, 200, 240, 0.4);
+}
+
 .row .value {
   text-align: right;
   font-variant-numeric: tabular-nums;

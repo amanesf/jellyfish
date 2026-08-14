@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PIPE_RADIUS, TANK_HEIGHT } from '../core/tank';
+import { TANK_HEIGHT } from '../core/tank';
 import { WATER_GLSL } from './water';
 import { waterRamp } from './ramps';
 import { LED } from './led';
@@ -31,7 +31,8 @@ export function createSnow(camPos: THREE.Vector3): Snow {
     // A deterministic spiral rather than random(): equal-area in the disc, so
     // the density really is uniform, and reproducible without storing a seed.
     const t = (i + 0.5) / COUNT;
-    const r = Math.sqrt(PIPE_RADIUS * PIPE_RADIUS + t * (0.94 * 0.94 - PIPE_RADIUS * PIPE_RADIUS));
+    // The full disc: there is no standpipe to keep out of any more.
+    const r = Math.sqrt(t) * 0.94;
     const a = i * 2.399963; // golden angle
     position[i * 3] = Math.cos(a) * r;
     // Height from a hash, not from a second irrational rotation. The golden

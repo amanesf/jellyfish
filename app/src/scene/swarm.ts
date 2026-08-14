@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PIPE_RADIUS, TANK_HEIGHT } from '../core/tank';
+import { TANK_HEIGHT } from '../core/tank';
 import { createJellyfish, pulse, rand, sharedTextures, type Jellyfish, type Species } from './jellyfish';
 
 /**
@@ -164,7 +164,10 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
     // Spread across the whole annulus between the standpipe and the glass,
     // and biased outward by the square root so the *area* is covered evenly
     // rather than the radius — otherwise everything starts near the middle.
-    const inner = PIPE_RADIUS + 0.12, outer = 0.86;
+    // The middle is open now that the standpipe is gone, so the spawn annulus
+    // is a disc with only enough of a hole to stop everything starting on the
+    // axis at once.
+    const inner = 0.10, outer = 0.86;
     const radius = Math.sqrt(inner * inner + rand(seed, 7) * (outer * outer - inner * inner));
     // Arrivals appear *in* the tank and fade up, rather than swimming in from
     // under the floor. The first version pushed them in from below Y_LOW and
@@ -304,11 +307,6 @@ export function createSwarm(scene: THREE.Scene, camPos: THREE.Vector3): Swarm {
         // Keep it off the glass and the pipe without anything that reads as a
         // wall: the flow already pushes inward, this only catches the strays.
         const r = Math.hypot(j.position.x, j.position.z);
-        const inner = PIPE_RADIUS + j.size * 1.1;
-        if (r < inner) {
-          const k = inner / Math.max(r, 1e-4);
-          j.position.x *= k; j.position.z *= k;
-        }
         const outer = 0.92 - j.size;
         if (r > outer) {
           const k = outer / r;

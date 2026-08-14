@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { EYE_DISTANCE, EYE_HEIGHT, PIPE_RADIUS, TANK_HEIGHT } from '../core/tank';
+import { EYE_DISTANCE, EYE_HEIGHT, TANK_HEIGHT } from '../core/tank';
 import { waterRamp } from './ramps';
 import { LED } from './led';
 
@@ -39,7 +39,6 @@ export interface Water {
  * veiled by exactly the same water in front of it, and by the same shafts. */
 export const WATER_GLSL = /* glsl */ `
   const float TANK_HEIGHT = ${TANK_HEIGHT.toFixed(4)};
-  const float PIPE_RADIUS = ${PIPE_RADIUS.toFixed(4)};
 
   /**
    * The hash the noise is built on.
@@ -214,15 +213,14 @@ const fragmentShader = /* glsl */ `
     t0 = max(t0, 0.0);
     if (t1 <= t0) discard;
 
-    // The standpipe stops the ray early. It is opaque, painted the colour of
-    // the water immediately around it, and its only real job is to be
-    // something the jellyfish can pass behind.
-    float p0, p1;
-    bool hitPipe = cylinder(o, dir, PIPE_RADIUS, p0, p1);
-    if (hitPipe && p0 > t0 && p0 < t1) {
-      vec3 hit = o + dir * p0;
-      if (hit.y > yBot && hit.y < yTop) t1 = p0;
-    }
+    // There is no standpipe.
+    //
+    // There used to be an opaque column up the axis, whose only job was to be
+    // something the animals could pass behind. It cost the tank its depth: a
+    // cylinder of tank-coloured nothing standing in the middle of the frame
+    // reads as a wall, and everything behind it was hidden rather than merely
+    // far away. What makes an animal read as deep is the water in front of it,
+    // and the water is better at it.
 
     const int STEPS = 40;
     float dt = (t1 - t0) / float(STEPS);
@@ -250,7 +248,15 @@ const fragmentShader = /* glsl */ `
     // model does not include bloom or the Kuwahara pass, and measured against a
     // real capture those two lift the water by about 8 sRGB in green and blue,
     // so the solved 1.07 becomes 0.99 here. Everything else went in untouched.
-    float sigma = 3.24;
+    // Clearer water.
+    //
+    // Extinction along the ray decides how much of the tank you are looking
+    // *through* rather than at: at 3.24 almost everything reaching the eye was
+    // scattered within a third of a radius of the glass, so the far half of the
+    // tank contributed nothing and the water read as a painted surface a little
+    // way in. Lower, and the ray keeps gathering across the whole tank — which
+    // is what makes a body of water look like one.
+    float sigma = 2.05;
     float transmit = 1.0;
     // Dither the start, so 40 steps do not band the tank into 40 rings. The
     // pattern is a function of the pixel only, so a frozen frame is still
@@ -339,14 +345,6 @@ const fragmentShader = /* glsl */ `
     col += room * fresnel * 0.16;
 
     col *= uLed;
-
-    if (hitPipe && abs(t1 - p0) < 1e-4) {
-      // The pipe: the same water, a shade lighter and flat, with a soft edge
-      // where its own curvature turns away.
-      vec3 hit = o + dir * p0;
-      float curve = 1.0 - clamp(abs(hit.x) / PIPE_RADIUS, 0.0, 1.0);
-      col = texture2D(uRamp, vec2(clamp(s * 1.06 + 0.05 * curve, 0.0, 1.0), 0.5)).rgb * 1.04;
-    }
 
     gl_FragColor = vec4(col, 1.0);
   }

@@ -19,6 +19,8 @@ export interface Controls {
   light: () => number;
   /** The tank's own lamp, 0 (white) .. 1 (right round the LED wheel). */
   led: () => number;
+  /** Whether the lamp is walking the wheel on its own. */
+  ledAuto: () => boolean;
   /** Move a knob from code, as the capture harness does. */
   setValue: (key: string, value: number) => void;
 }
@@ -74,12 +76,39 @@ export function createControls(host: HTMLElement): Controls {
     readouts.set(spec.key, readout);
   }
 
+  // The lamp's own timer.
+  //
+  // A public tank's LEDs are not parked on a colour, they crawl round the wheel
+  // over a couple of minutes, and half of what is hypnotic about standing in
+  // front of one is that the animals are a different colour than they were when
+  // you looked away. It drives the same knob rather than bypassing it, so the
+  // slider moves while it runs and picking the slider up hands control back.
+  let auto = new URLSearchParams(window.location.search).get('auto') === '1';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'toggle';
+  const paint = () => {
+    button.textContent = auto ? '自動 ON' : '自動 OFF';
+    button.setAttribute('aria-pressed', String(auto));
+    button.classList.toggle('on', auto);
+  };
+  button.addEventListener('click', () => { auto = !auto; paint(); });
+  paint();
+  const autoRow = document.createElement('div');
+  autoRow.className = 'row';
+  const autoLabel = document.createElement('span');
+  autoLabel.textContent = '色送り';
+  autoRow.append(autoLabel, button, document.createElement('span'));
+  host.appendChild(autoRow);
+  inputs.get('led')!.addEventListener('pointerdown', () => { if (auto) { auto = false; paint(); } });
+
   const get = (key: string) => values.get(key)!;
   return {
     count: () => get('count'),
     flow: () => get('flow'),
     light: () => get('light'),
     led: () => get('led'),
+    ledAuto: () => auto,
     setValue(key, value) {
       const input = inputs.get(key);
       const spec = SLIDERS.find((s) => s.key === key);
