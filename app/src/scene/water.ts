@@ -104,13 +104,23 @@ export const WATER_GLSL = /* glsl */ `
     float bands = fbm(q * 1.7) * 0.72 + fbm(q * 4.3 + 11.0) * 0.28;
     // Contrast falls with depth: near the surface the bands are separated by
     // near-dark water, far down they have merged into an even glow.
-    // The solver wants both of these at their bounds (9.0 and 4.0) and is
-    // arguing for a field with no depth behaviour at all, which is a sign the
-    // model is short of a mechanism rather than that the beams really are as
-    // hard at the floor as at the surface — it is buying spread in the deep
+    //
+    // The solver wants both of these at their bounds, 9.0 and 4.0, and they are
+    // held back at 6.00 and 2.20 because it is only buying spread in the deep
     // bands, where the reference's own spread is inflated by the wall panels
-    // glowing through the far side of the glass. Kept inside the bounds, with
-    // the falloff the surface argues for.
+    // glowing through the far side of the glass.
+    //
+    // Tried at the bounds, and *measured on a real capture* rather than on the
+    // model: the profile's RMSE went from 10.35 to 11.60. So the solver is
+    // wrong here in the way it is wrong about everything the model has no term
+    // for, and the answer is not to argue about it in prose — it is to run
+    // scripts/waterprofile.js on a capture, which is what settled it.
+    //
+    // The model's own floor is a cost of 10.765 whatever these two are, because
+    // what it cannot reproduce is the *shape* of the reference's spread — peaks
+    // at bands 0, 5-6 and 10, which are the wall panels and the animals — and
+    // not its size. Under 5 is not reachable without giving the water a term
+    // for things that are not water, and that is the wrong trade.
     float contrast = mix(6.00, 2.20, depth);
     return clamp(0.5 + (bands - 0.5) * 2.0 * contrast, 0.0, 1.6);
   }
