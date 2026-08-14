@@ -35,7 +35,7 @@ interface SliderSpec {
 
 const SLIDERS: SliderSpec[] = [
   { key: 'count', label: '個体数', min: 2, max: 20, step: 1, value: 8, format: (v) => `${v}体` },
-  { key: 'flow', label: '水流', min: 0, max: 1, step: 0.01, value: 0, format: (v) => v.toFixed(2) },
+  { key: 'flow', label: '水流', min: 0, max: 1, step: 0.01, value: 0.5, format: (v) => v.toFixed(2) },
   { key: 'light', label: '水の色', min: 0, max: 1, step: 0.01, value: 1, format: (v) => v.toFixed(2) },
   { key: 'led', label: '照明色', min: 0, max: 1, step: 0.01, value: 0, format: (v) => (v < 0.005 ? 'OFF' : v.toFixed(2)) },
 ];

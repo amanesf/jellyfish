@@ -121,8 +121,29 @@ export const WATER_GLSL = /* glsl */ `
     // at bands 0, 5-6 and 10, which are the wall panels and the animals — and
     // not its size. Under 5 is not reachable without giving the water a term
     // for things that are not water, and that is the wrong trade.
-    float contrast = mix(6.00, 2.20, depth);
-    return clamp(0.5 + (bands - 0.5) * 2.0 * contrast, 0.0, 1.6);
+    float contrast = mix(3.20, 1.40, depth);
+    // Expanded about the field's *own* mean, and normalised to one.
+    //
+    // This used to expand about 0.5 and return a number centred on 0.5, which
+    // quietly made the tank's overall brightness a function of wherever the
+    // noise happened to be. Two reasons it matters. The field's mean is not
+    // 0.5 — four octaves at halving amplitude sum to 0.9375 of a unit-mean
+    // noise, so it is 0.469 — and at a contrast of 6 that 0.031 offset is
+    // multiplied to 0.37 and then clamped, which is most of the range. And the
+    // shafts are wide: at this spread the whole tank spans about three noise
+    // cells, so there is no averaging to save it — the tank sits inside one
+    // lobe and takes that lobe's level as its exposure.
+    //
+    // Which turned the 水流 knob into a brightness control by accident. It
+    // offsets the field's phase, so moving it slid the tank onto a different
+    // lobe: measured, the profile's RMSE went from 10.28 at flow 0 to 56.42 at
+    // flow 0.5, and the water came back milky. Centred on the true mean and
+    // returning a multiplier around 1.0, the tone is set by descent() alone and
+    // the field only says where the beams are.
+    const float FIELD_MEAN = 0.469;
+    // The scale is what the old expression averaged to, so the water's tone is
+    // where it was fitted; all that has changed is that it no longer moves.
+    return clamp(0.30 * (1.0 + (bands - FIELD_MEAN) * 2.0 * contrast), 0.0, 1.6);
   }
 
   /** Light reaching depth y at all, before the shafts bunch it up. */
@@ -151,6 +172,7 @@ const fragmentShader = /* glsl */ `
   uniform float uLightTint;
   uniform vec3 uLed;
   uniform sampler2D uRamp;
+  uniform sampler2D uReflect;
 
   ${WATER_GLSL}
 
@@ -257,8 +279,19 @@ const fragmentShader = /* glsl */ `
     // cylindrical tanks are *brighter* at their two sides, brightly enough that
     // the far wall smears out into a band of light — and the reference has
     // exactly that band down both edges.
-    float u = length((o + dir * t0).xz);
-    s *= mix(1.0, 1.30, smoothstep(0.62, 0.99, u));
+    // How obliquely the ray met the wall, and it has to be measured as an
+    // *angle*, not as a radius.
+    //
+    // This was the length of the entry point in xz, the distance of that point
+    // from the axis — and the entry point is on the cylinder, so it is 1.0 for
+    // every ray in the frame. Every term keyed to it therefore applied
+    // everywhere at full strength: the side brightening lifted the whole tank
+    // instead of its two edges, and the reflection pasted the gallery flat
+    // across the middle of the glass. What "near the silhouette" actually means
+    // is that the wall's normal has turned away from the eye.
+    vec2 nrm = normalize((o + dir * t0).xz);
+    float edge = 1.0 - abs(dot(nrm, normalize(dir.xz)));
+    s *= mix(1.0, 1.30, smoothstep(0.55, 0.96, edge));
 
     vec3 col = texture2D(uRamp, vec2(s, 0.5)).rgb;
     // The knob is a *colour*, not a level.
@@ -282,12 +315,28 @@ const fragmentShader = /* glsl */ `
 
     // The acrylic's own gloss: a hard, narrow specular right at the turn of
     // the cylinder, where the wall is edge-on and throws the room back at you.
-    // Additive and cool, because what it is reflecting is the gallery, which is
-    // dark and lit blue. Without it the tank has no surface at all — the water
-    // simply stops — and a surface is the difference between a tank and a
-    // cylinder-shaped hole.
-    float gloss = smoothstep(0.88, 0.985, u) * (1.0 - smoothstep(0.985, 1.0, u));
+    // Without it the tank has no surface at all — the water simply stops — and
+    // a surface is the difference between a tank and a cylinder-shaped hole.
+    float gloss = smoothstep(0.86, 0.985, edge) * (1.0 - smoothstep(0.985, 1.0, edge));
     col += vec3(0.055, 0.085, 0.125) * gloss;
+
+    // ...and what it throws back is the gallery (scripts/reflection.js).
+    //
+    // A cylinder is a mirror that compresses: dead centre it shows you what is
+    // directly behind you, and the whole rest of the room is squeezed into the
+    // last tenth of the width at each side. That squeeze is the mapping — the
+    // angle of the wall where the ray entered, not the screen position — and it
+    // is why a reflection on a round tank reads as round and a flat one pasted
+    // across the glass does not.
+    //
+    // Weighted by Fresnel, so it is nearly absent face-on and unmistakable at
+    // the two edges, which is where a real one lives. Kept dim and blurred past
+    // reading: a legible visitor in the reflection takes the eye off the tank,
+    // and the tank is the subject.
+    float mirrorX = 0.5 + asin(clamp(nrm.x, -1.0, 1.0)) / 3.14159265;
+    float fresnel = pow(edge, 3.2);
+    vec3 room = texture2D(uReflect, vec2(mirrorX, clamp(0.34 + vUv.y * 0.40, 0.0, 1.0))).rgb;
+    col += room * fresnel * 0.16;
 
     col *= uLed;
 
@@ -305,6 +354,29 @@ const fragmentShader = /* glsl */ `
 
 export function createWater(): Water {
   const ramp = waterRamp();
+  // A 1x1 white stand-in until the file lands, so the tank is never wrong while
+  // it loads — the reflection is additive, so an early frame is simply a tank
+  // with a clean surface.
+  const reflection = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+  reflection.needsUpdate = true;
+  new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}reflection.webp`, (tex) => {
+    // Sampled *as sRGB*, unlike the plate.
+    //
+    // The plate is composited after OutputPass, in display space, so it is
+    // tagged NoColorSpace. This is added to `col`, which is linear light before
+    // the tonemap, so it has to be linearised on sampling — and the difference
+    // is not subtle. Left raw, an sRGB 0.6 arrived as a linear 0.6 against
+    // water that runs 0.02 to 0.4, and the reflection was several times
+    // brighter than the tank it was reflecting in: the profile's RMSE went from
+    // 10.35 to 56.78 and the water came back as milk.
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    material.uniforms.uReflect.value = tex;
+  });
   const material = new THREE.ShaderMaterial({
     uniforms: {
       uCamPos: { value: new THREE.Vector3(0, EYE_HEIGHT, EYE_DISTANCE) },
@@ -315,6 +387,7 @@ export function createWater(): Water {
       uLightTint: { value: 0.0 },
       uLed: { value: LED },
       uRamp: { value: ramp },
+      uReflect: { value: reflection },
     },
     vertexShader,
     fragmentShader,

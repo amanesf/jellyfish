@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { WATER_GLSL } from './water';
 import { bellRamp, veilRamp, waterRamp } from './ramps';
-import { LED } from './led';
+import { LED_JELLY } from './led';
 import { TANK_HEIGHT } from '../core/tank';
 
 /**
@@ -163,7 +163,7 @@ const bellFragment = /* glsl */ `
   uniform float uTime;
   uniform float uFlow;
   uniform float uFade;   // 0 while a new individual is still arriving
-  uniform vec3 uLed;
+  uniform vec4 uLed;     // xyz the lamp's colour, w how far it is turned
 
   ${WATER_GLSL}
 
@@ -250,7 +250,20 @@ const bellFragment = /* glsl */ `
     // and it goes solid, which is exactly where the reference's bells carry
     // their most saturated orange. Drawn opaque — which is what this was — a
     // bell is a plastic toy in the water rather than a thing made of water.
-    col *= uLed;
+    // The lamp takes the animal over.
+    //
+    // Multiplying by a tint — which is what this did — leaves an orange bell
+    // orange under a cyan lamp, only muddier, because orange has almost no blue
+    // for a blue lamp to multiply. That is right for a lit wall and wrong for a
+    // jellyfish: nearly everything you see of one is light that went in, rattled
+    // around inside and came back out, so under a coloured lamp the animals
+    // *become* the lamp. Its own tone is kept as brightness and the hue is the
+    // lamp's, at the strength the knob is turned to.
+    float bright = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col = mix(col, uLed.rgb * bright, uLed.w);
+    // ...and the crown highlight is emitted in it, which is what makes the
+    // bloom halo around each animal come up in the lamp's colour too.
+    col += uLed.rgb * sheen * lit * uLed.w * 0.55;
     float body = 0.30 + 0.50 * facing + 0.24 * smoothstep(0.62, 1.0, vRim);
     gl_FragColor = vec4(col, uFade * clamp(body, 0.0, 1.0));
   }
@@ -386,7 +399,7 @@ const veilFragment = /* glsl */ `
   uniform float uFlow;
   uniform float uFade;
   uniform float uFrill;
-  uniform vec3 uLed;
+  uniform vec4 uLed;
 
   ${WATER_GLSL}
 
@@ -437,7 +450,11 @@ const veilFragment = /* glsl */ `
     // sheet folds back on itself, nearly clear between. That is what makes a
     // lace edge rather than a painted ribbon, and it is most of the 透明感 the
     // reference has and this did not.
-    col *= uLed;
+    // The lamp takes the tissue over the same way it takes the bell over: what
+    // you see of an oral arm is light that passed through it.
+    float bright = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col = mix(col, uLed.rgb * bright, uLed.w);
+
     // Two different tissues out of one shader.
     //
     // An oral arm is a frilled sheet and reads as lace: the ruffle drives its
@@ -496,7 +513,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
       uFlow: { value: 0.5 },
       uFade: { value: 0 },
       uRamp: { value: shared.bell },
-      uLed: { value: LED },
+      uLed: { value: LED_JELLY },
       uWaterRamp: { value: shared.water },
       uCamPos: { value: shared.camPos },
     },
@@ -595,7 +612,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.42 : 0.26) : size * 0.013 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },
-        uLed: { value: LED },
+        uLed: { value: LED_JELLY },
         uWaterRamp: { value: shared.water },
         uTime: { value: 0 },
         uFlow: { value: 0.5 },
