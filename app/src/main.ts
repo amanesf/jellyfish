@@ -50,7 +50,23 @@ new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}plate.webp`, (texture
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
   postFx.setPlate(texture);
+  plateReady = true;
 });
+
+/*
+ * The reveal.
+ *
+ * Held until two things are true: the plate has arrived (it is a texture over
+ * the network, and without it the page shows a tank with no room around it),
+ * and the scene has been stepped far enough for the Verlet chains to hang. At
+ * t=0 every tentacle in the tank is a straight line pointing down, because a
+ * chain has no shape until the water has had time to bend it.
+ */
+let plateReady = false;
+function revealWhenReady(): void {
+  if (!plateReady || simTime < 2.5) return;
+  document.querySelector('.stage')?.classList.add('ready');
+}
 
 const controls = createControls(document.querySelector<HTMLElement>('#console')!);
 
@@ -91,6 +107,7 @@ function step(dt: number): void {
   decks.update(simTime, controls.flow());
   snow.update(simTime, controls.flow());
   swarm.update(dt, simTime, controls.count(), controls.flow());
+  revealWhenReady();
 }
 
 // A frozen frame is simulated from zero rather than teleported to: a Verlet

@@ -642,7 +642,12 @@ const veilFragment = /* glsl */ `
     // brightest thing in the picture by a distance, and the bloom threshold
     // sits below it: an arm crossing a light shaft went to white and smeared a
     // headlight across the glass. Tissue this thin is bright, not incandescent.
-    float s = 0.30 + 0.34 * lit + uFrill * 0.20 * frill - 0.32 * vAlong
+    // The arms are the brightest thing in the water and the tentacles are not.
+    // In the reference an oral arm is near-white where a fold turns to the
+    // light, and it holds that brightness most of the way down its length —
+    // the old fall of 0.32 with distance had the ribbon fading out half way,
+    // which is what a tentacle does, not an arm.
+    float s = 0.30 + 0.34 * lit + uFrill * (0.16 + 0.22 * frill) - (0.32 - 0.10 * uFrill) * vAlong
             + (1.0 - uFrill) * 0.16;
     float banded = floor(s * 5.0 + 0.5) / 5.0;
     s = clamp(mix(s, banded, 0.4), 0.0, 1.0);
@@ -689,8 +694,14 @@ const veilFragment = /* glsl */ `
     // a smooth white sleeve. There are five arms now and each is faint enough
     // that five of them stacked still show the water. Sharpened as well — the
     // gaps between folds have to go to *nothing*, or the frill is a stripe.
-    float lace = 0.05 + 0.30 * pow(frill, 2.2);
-    float a = uFade * (1.0 - vAlong * 0.72) * mix(0.52, lace, uFrill);
+    // Dense enough to be seen. At 0.05 to 0.35 the ribbon was a rumour: the
+    // reference's arms are substantial, you cannot see the far side of the
+    // tank through one, and only their *edges* break up into lace. The folds
+    // still drive the opacity — that is what makes an edge ragged rather than
+    // cut — but they drive it between a half and a whole rather than between
+    // nothing and a third.
+    float lace = 0.09 + 0.34 * pow(frill, 1.7);
+    float a = uFade * (1.0 - vAlong * (0.72 - 0.22 * uFrill)) * mix(0.52, lace, uFrill);
     gl_FragColor = vec4(col, a);
     if (uMode > 0.5) gl_FragColor = vec4(vec3(circleOfConfusion(vWorld, uCamPos)), step(0.02, a));
   }
@@ -797,8 +808,32 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   // clearest way to say "not this animal".
   const tentacleCount = species === 'bell' ? 40 : 32;
   const CLUSTERS = 8;
-  const armNodes = species === 'bell' ? 15 : 18;
-  const armSegment = size * (species === 'bell' ? 0.155 : 0.24);
+  /*
+   * The oral arms, measured off the reference rather than guessed (item: the
+   * frilly ones, 1786667042546.png).
+   *
+   * Looking at the painting properly settles an argument this file has been
+   * having with itself. The animal in it is *mostly oral arm*: a small
+   * intensely orange bell, maybe a fifth of the creature, and behind it a long
+   * white ruffled ribbon three to five bell-widths long that curls through big
+   * lazy S-shapes and is the single brightest thing in the tank. The fine
+   * tentacles are there too, but they are hair — they read as a few pale
+   * curves crossing the ribbon, not as a curtain.
+   *
+   * Overshot once, badly, and the correction is recorded because the failure
+   * is instructive: at 0.86 radii wide and half opaque, four arms compose to an
+   * opaque white slab that swallows the bell — the animal became a paper bag.
+   * Four overlapping sheets multiply, so an arm has to be far more transparent
+   * than it looks like it should be for four of them to read as one ribbon.
+   *
+   * This had it the other way round. The arms were 2.3 bell radii of narrow
+   * lace at five percent alpha, which is invisible, and forty tentacles at full
+   * length did all the work — so every animal was a small cap towing a broom,
+   * and the reference's animals tow a *banner*. Four and a half radii of arm,
+   * at twice the node count so the S-curves have somewhere to happen.
+   */
+  const armNodes = species === 'bell' ? 22 : 24;
+  const armSegment = size * (species === 'bell' ? 0.21 : 0.30);
   const tentacleNodes = species === 'bell' ? 18 : 24;
   // Shorter than they were. Eighteen nodes at 0.86 bell radii is fifteen radii
   // of thread, which on the biggest animals reached from the lid of the tank to
@@ -876,7 +911,10 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         // tenth of the bell across, and it is the *number* of them crossing
         // each other that fills the space, not the width of any one.
         ...cocUniforms(),
-        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.42 : 0.26) : size * 0.013 },
+        // Wide. An oral arm in the reference is most of a bell across at the
+        // mouth, not a tenth of one — it is a ribbon, and its width is what
+        // makes it read as tissue rather than as string.
+        uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.34 : 0.24) : size * 0.011 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },
         uLed: { value: LED_JELLY },
