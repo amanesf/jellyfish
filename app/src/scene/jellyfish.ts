@@ -594,7 +594,11 @@ class Chain {
     this.prev.set(this.pos);
   }
 
-  step(dt: number, time: number, root: THREE.Vector3, flow: (x: number, y: number, z: number, out: THREE.Vector3) => void, drag: number) {
+  step(
+    dt: number, time: number, root: THREE.Vector3,
+    flow: (x: number, y: number, z: number, out: THREE.Vector3) => void,
+    drag: number, wave: number, bell: THREE.Vector3, bellRadius: number,
+  ) {
     const f = new THREE.Vector3();
     for (let i = 1; i < this.nodes; i++) {
       const k = i * 3;
@@ -610,8 +614,19 @@ class Chain {
       // its own scale — eddies the width of the strand — and that is what this
       // is: a travelling wave down the chain, out of phase with its neighbours,
       // growing toward the tip where there is nothing to hold it.
+      /*
+       * The ripple, and where along the strand it acts.
+       *
+       * It used to be weighted t*t, which is zero for the first third of the
+       * strand — so an arm left the mouth as a *straight rod* and only started
+       * moving half way down. Nothing about a jellyfish is stiff at the root
+       * and floppy at the tip; if anything it is the other way round, since the
+       * root is the thickest part but it is also the part being waved about by
+       * the bell. The floor of 0.3 is what makes an arm leave the mouth already
+       * curving, which is the shape the reference has.
+       */
       const t = i / this.nodes;
-      const w = t * t * 0.55;
+      const w = (0.30 + 0.70 * t * t) * wave;
       f.x += Math.sin(time * 1.15 + i * 0.85 + this.sway) * w;
       f.z += Math.cos(time * 0.93 + i * 0.72 + this.sway * 1.7) * w;
       // Verlet with drag, and a real sag.
@@ -633,7 +648,9 @@ class Chain {
     this.prev[0] = root.x; this.prev[1] = root.y; this.prev[2] = root.z;
     // Distance constraints, root outward. Three passes is enough for a chain
     // this soft, and more only makes it stiffer than an arm should be.
-    for (let pass = 0; pass < 3; pass++) {
+    // Two passes, not three. The third was buying stiffness these are not
+    // supposed to have, and it is a third of the simulation's whole cost.
+    for (let pass = 0; pass < 2; pass++) {
       for (let i = 1; i < this.nodes; i++) {
         const a = (i - 1) * 3, b = i * 3;
         let dx = this.pos[b] - this.pos[a];
@@ -643,6 +660,32 @@ class Chain {
         const k = (len - this.segment) / len;
         this.pos[b] -= dx * k; this.pos[b + 1] -= dy * k; this.pos[b + 2] -= dz * k;
       }
+    }
+
+    /*
+     * The bell is solid, and until now nothing knew that.
+     *
+     * Strands were free to pass straight through the umbrella they hang from,
+     * and they did — constantly, because the flow pushes them sideways and the
+     * bell is right there. A tentacle emerging from the *top* of a bell is the
+     * single most obviously wrong thing an animal here can do.
+     *
+     * A sphere is enough: the bell is a shallow dome about as wide as it is
+     * from crown to skirt, so one keep-out sphere at the animal's middle covers
+     * it, and a strand that would be inside it is pushed to its surface. Run
+     * after the distance constraints so it is the last word, and skipped
+     * entirely for the first node, which is the anchor.
+     */
+    const r2 = bellRadius * bellRadius;
+    for (let i = 1; i < this.nodes; i++) {
+      const k = i * 3;
+      const dx = this.pos[k] - bell.x, dy = this.pos[k + 1] - bell.y, dz = this.pos[k + 2] - bell.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 >= r2 || d2 < 1e-9) continue;
+      const d = Math.sqrt(d2), push = bellRadius / d;
+      this.pos[k] = bell.x + dx * push;
+      this.pos[k + 1] = bell.y + dy * push;
+      this.pos[k + 2] = bell.z + dz * push;
     }
   }
 }
@@ -1215,7 +1258,15 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
           anchor.y -= ARM_DROP;
         }
         anchor.multiplyScalar(size).applyQuaternion(group.quaternion).add(jelly.position);
-        c.chain.step(dt, time, anchor, flowField, c.kind === 'arm' ? 0.90 : 0.94);
+        // The arms are waved much harder than the tentacles. An oral arm is a
+        // sheet — it catches the water, it ruffles, it never hangs straight —
+        // while a tentacle is a thread and mostly just trails.
+        c.chain.step(
+          dt, time, anchor, flowField,
+          c.kind === 'arm' ? 0.90 : 0.94,
+          c.kind === 'arm' ? 1.9 : 0.55,
+          jelly.position, size * 0.92,
+        );
       }
 
       // Copy the chains into the ribbon meshes.

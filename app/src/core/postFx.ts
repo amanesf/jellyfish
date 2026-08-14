@@ -74,18 +74,26 @@ export function createPostFx(
   /*
    * The circle-of-confusion buffer, at half resolution.
    *
-   * Half is plenty: it is fed into a blur radius, and a radius does not need to
-   * be sharp — what it must not do is have edges of its own, which is why it is
-   * sampled with LinearFilter and why the pass that reads it weights each tap
-   * by that tap's own value.
+   * A quarter is plenty, and it is a quarter of the cost of a half: the buffer
+   * feeds a blur *radius*, and a radius does not need to be sharp — what it
+   * must not do is have edges of its own, which is why it is sampled with
+   * LinearFilter and why the pass that reads it weights each tap by that tap's
+   * own value.
+   *
+   * It is also refreshed every other frame. It is a second full render of the
+   * scene, which is the most expensive single thing in the chain, and what it
+   * measures is how far each animal is from the focal plane — a quantity that
+   * changes over seconds, not frames. A frame-old blur radius is not a visible
+   * error; a second scene render every frame is a visible frame rate.
    */
-  const cocTarget = new THREE.WebGLRenderTarget(FRAME_WIDTH / 2, FRAME_HEIGHT / 2, {
+  const cocTarget = new THREE.WebGLRenderTarget(FRAME_WIDTH / 4, FRAME_HEIGHT / 4, {
     type: THREE.HalfFloatType,
     minFilter: THREE.LinearFilter,
     magFilter: THREE.LinearFilter,
     depthBuffer: false,
   });
 
+  let cocAge = 2;
   const dof = new ShaderPass(DofShader);
   dof.uniforms.tCoC.value = cocTarget.texture;
   dof.uniforms.uTexel.value.set(1 / FRAME_WIDTH, 1 / FRAME_HEIGHT);
@@ -111,13 +119,17 @@ export function createPostFx(
       // No duplicate meshes and no override material — which could not work
       // here in any case, since the bell's whole shape lives in its vertex
       // shader (scene/jellyfish.ts).
-      RENDER_MODE.value = 1;
-      const previous = renderer.getRenderTarget();
-      renderer.setRenderTarget(cocTarget);
-      renderer.clear();
-      renderer.render(scene, camera);
-      renderer.setRenderTarget(previous);
-      RENDER_MODE.value = 0;
+      cocAge++;
+      if (cocAge >= 2) {
+        cocAge = 0;
+        RENDER_MODE.value = 1;
+        const previous = renderer.getRenderTarget();
+        renderer.setRenderTarget(cocTarget);
+        renderer.clear();
+        renderer.render(scene, camera);
+        renderer.setRenderTarget(previous);
+        RENDER_MODE.value = 0;
+      }
       composer.render();
     },
     dispose() {
