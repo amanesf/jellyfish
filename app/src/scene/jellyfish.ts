@@ -597,7 +597,7 @@ class Chain {
   step(
     dt: number, time: number, root: THREE.Vector3,
     flow: (x: number, y: number, z: number, out: THREE.Vector3) => void,
-    drag: number, wave: number, bell: THREE.Vector3, bellRadius: number,
+    drag: number, wave: number, bell: THREE.Vector3, bellUp: THREE.Vector3, bellRadius: number,
   ) {
     const f = new THREE.Vector3();
     for (let i = 1; i < this.nodes; i++) {
@@ -682,6 +682,18 @@ class Chain {
       const dx = this.pos[k] - bell.x, dy = this.pos[k + 1] - bell.y, dz = this.pos[k + 2] - bell.z;
       const d2 = dx * dx + dy * dy + dz * dz;
       if (d2 >= r2 || d2 < 1e-9) continue;
+      // A *hemisphere*, not a sphere, and this is the other half of the hydra.
+      //
+      // A bell is a dome: solid above, open underneath. The space below it is
+      // exactly where the arms and the tentacles belong — it is the inside of
+      // the skirt — so a full sphere was pushing strands out of the one region
+      // they are supposed to occupy, and it pushed them out along whatever
+      // radius they were nearest, which for a strand hanging under the middle
+      // of the animal is upward past the crown.
+      //
+      // Only the part above the animal's own underside is solid. Below that
+      // line a strand may go where it likes.
+      if (dx * bellUp.x + dy * bellUp.y + dz * bellUp.z < -0.25 * bellRadius) continue;
       const d = Math.sqrt(d2), push = bellRadius / d;
       this.pos[k] = bell.x + dx * push;
       this.pos[k + 1] = bell.y + dy * push;
@@ -1102,9 +1114,19 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
       at: { angle, rim: 0 },
     });
   }
-  /** How far under the crown the mouth hangs, in bell radii. Past the skirt,
-   * which sits near -0.4, so the arms leave from inside the bell. */
-  const ARM_DROP = 0.62;
+  /*
+   * How far under the crown the mouth hangs, in bell radii.
+   *
+   * This was 0.62 and it was measured from the wrong end. rimPoint at rim 0 is
+   * the *crown* — the top of the dome, at +0.67 — so dropping 0.62 from it put
+   * the mouth at +0.05, which is the middle of the bell. The arms were being
+   * born inside the umbrella, and the keep-out sphere then ejected them in
+   * whatever direction they happened to be leaning, including straight up. That
+   * is the hydra: four arms sprouting from the top of the head.
+   *
+   * The skirt hangs to about -0.4. The mouth is below it.
+   */
+  const ARM_DROP = 1.32;
   for (let i = 0; i < tentacleCount; i++) {
     // Eight clusters, five or so strands each, with the gaps between clusters
     // wider than the gaps within one.
@@ -1206,6 +1228,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
   let strokesLeft = 2 + Math.floor(rand(seed, 13) * 6);
   let lastPulse = pulse(phase);
   const anchor = new THREE.Vector3();
+  const bellUp = new THREE.Vector3(0, 1, 0);
 
   const jelly: Jellyfish = {
     group,
@@ -1285,6 +1308,8 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
       // squeeze, the curl of the skirt and the scallop all move the anchor, so
       // a stroke tows the whole curtain with it.
       const seedAngle = bellMat.uniforms.uSeed.value as number;
+      // The animal's own up, for the keep-out hemisphere below.
+      bellUp.set(0, 1, 0).applyQuaternion(group.quaternion);
       for (const c of chains) {
         rimPoint(c.at.angle, phase, seedAngle, time, activity, c.at.rim, anchor);
         if (c.kind === 'arm') {
@@ -1303,7 +1328,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
           dt, time, anchor, flowField,
           c.kind === 'arm' ? 0.90 : 0.94,
           c.kind === 'arm' ? 1.9 : 0.55,
-          jelly.position, size * 0.92,
+          jelly.position, bellUp, size * 0.92,
         );
       }
 
