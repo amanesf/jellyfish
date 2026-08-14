@@ -316,10 +316,17 @@ class Chain {
       const k = i * 3;
       const px = this.pos[k], py = this.pos[k + 1], pz = this.pos[k + 2];
       flow(px, py, pz, f);
-      // Verlet with drag. Jellyfish arms are close to neutrally buoyant, so
-      // gravity is a whisper and the water does nearly all the work.
+      // Verlet with drag, and a real sag.
+      //
+      // Gravity here used to be 0.05 against a flow field an order of magnitude
+      // stronger, on the reasoning that jellyfish tissue is nearly neutrally
+      // buoyant. It is — but a tentacle is also being *towed*, and with nothing
+      // pulling down every strand in the tank streamed horizontally behind its
+      // animal like a windsock. The reference's hang: they fall away from the
+      // rim and the water bends them, rather than the water carrying them and
+      // nothing bending them back.
       const vx = (px - this.prev[k]) * drag + (f.x - 0.0) * dt * dt;
-      const vy = (py - this.prev[k + 1]) * drag + (f.y - 0.05) * dt * dt;
+      const vy = (py - this.prev[k + 1]) * drag + (f.y - 0.75) * dt * dt;
       const vz = (pz - this.prev[k + 2]) * drag + (f.z - 0.0) * dt * dt;
       this.prev[k] = px; this.prev[k + 1] = py; this.prev[k + 2] = pz;
       this.pos[k] = px + vx; this.pos[k + 1] = py + vy; this.pos[k + 2] = pz + vz;
