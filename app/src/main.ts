@@ -81,8 +81,7 @@ function step(dt: number): void {
   simTime += dt;
   // Two minutes for a full turn of the wheel, which is about what the tanks
   // this is copied from take.
-  if (controls.ledAuto()) controls.setValue('led', (simTime / 120) % 1);
-  setLed(controls.led());
+  setLed(controls.ledAuto() ? (simTime / 120) % 1 : 0);
   water.update(simTime, controls.flow(), controls.light());
   snow.update(simTime, controls.flow());
   swarm.update(dt, simTime, controls.count(), controls.flow());

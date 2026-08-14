@@ -17,9 +17,10 @@ export interface Controls {
   /** The water's colour, 0 (indigo) .. 0.5 (as measured) .. 1 (green-teal).
    * Not a brightness — see scene/water.ts. */
   light: () => number;
-  /** The tank's own lamp, 0 (white) .. 1 (right round the LED wheel). */
-  led: () => number;
-  /** Whether the lamp is walking the wheel on its own. */
+  /** Both of the above are fixed, and `?flow=` / `?light=` still move them for
+   * scripts/capture.js — the measure loop drives the water through this. */
+  /** Whether the lamp is walking the wheel on its own. When it is not, the
+   * lamp is white and the picture is the one the ramps were measured at. */
   ledAuto: () => boolean;
   /** Move a knob from code, as the capture harness does. */
   setValue: (key: string, value: number) => void;
@@ -35,11 +36,19 @@ interface SliderSpec {
   format: (v: number) => string;
 }
 
+/**
+ * Fixed, and no longer on the console.
+ *
+ * 水流 and 水の色 were dials for settings that have one good answer each, and
+ * every extra row pushed the 色送り button further off the bottom of a phone
+ * screen. A console is not an inventory of everything the renderer can do — it
+ * is the two or three things worth changing while you watch. `?flow=` and
+ * `?light=` still set them, which is how scripts/capture.js measures the water.
+ */
+const FIXED: Record<string, number> = { flow: 0.5, light: 1 };
+
 const SLIDERS: SliderSpec[] = [
   { key: 'count', label: '個体数', min: 2, max: 20, step: 1, value: 8, format: (v) => `${v}体` },
-  { key: 'flow', label: '水流', min: 0, max: 1, step: 0.01, value: 0.5, format: (v) => v.toFixed(2) },
-  { key: 'light', label: '水の色', min: 0, max: 1, step: 0.01, value: 1, format: (v) => v.toFixed(2) },
-  { key: 'led', label: '照明色', min: 0, max: 1, step: 0.01, value: 0, format: (v) => (v < 0.005 ? 'OFF' : v.toFixed(2)) },
 ];
 
 export function createControls(host: HTMLElement): Controls {
@@ -76,13 +85,15 @@ export function createControls(host: HTMLElement): Controls {
     readouts.set(spec.key, readout);
   }
 
-  // The lamp's own timer.
+  // The lamp.
   //
   // A public tank's LEDs are not parked on a colour, they crawl round the wheel
   // over a couple of minutes, and half of what is hypnotic about standing in
   // front of one is that the animals are a different colour than they were when
-  // you looked away. It drives the same knob rather than bypassing it, so the
-  // slider moves while it runs and picking the slider up hands control back.
+  // you looked away. So the lamp is a switch and not a dial: there was a 照明色
+  // slider beside it and it was the fifth row on a console that has room for
+  // four, pushing the button itself off the bottom of a phone screen. Off is
+  // white, which is the picture the ramps were measured at.
   let auto = new URLSearchParams(window.location.search).get('auto') === '1';
   const button = document.createElement('button');
   button.type = 'button';
@@ -100,14 +111,17 @@ export function createControls(host: HTMLElement): Controls {
   autoLabel.textContent = '色送り';
   autoRow.append(autoLabel, button, document.createElement('span'));
   host.appendChild(autoRow);
-  inputs.get('led')!.addEventListener('pointerdown', () => { if (auto) { auto = false; paint(); } });
+
+  for (const [key, value] of Object.entries(FIXED)) {
+    const override = new URLSearchParams(window.location.search).get(key);
+    values.set(key, override !== null ? Number(override) : value);
+  }
 
   const get = (key: string) => values.get(key)!;
   return {
     count: () => get('count'),
     flow: () => get('flow'),
     light: () => get('light'),
-    led: () => get('led'),
     ledAuto: () => auto,
     setValue(key, value) {
       const input = inputs.get(key);

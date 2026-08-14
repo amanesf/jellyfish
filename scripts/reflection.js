@@ -36,11 +36,15 @@ async function main() {
     .resize(W, H, { fit: 'fill' })
     // Radius 9 at this size is radius 25 on the original: past the point where
     // a face is a face.
-    .blur(9)
-    // Toward the blue everything else in this picture is lit in, and down. A
-    // reflection is *added* to the water in the shader, so its absolute level
-    // is what decides whether the glass reads as glass or as a projector.
-    .modulate({ brightness: 0.62, saturation: 0.45 })
+    .blur(8)
+    // Toward the blue everything else in this picture is lit in. Brightness is
+    // deliberately *not* pulled down here any more: the shader adds this into
+    // linear light before the tonemap, where the water itself runs 0.02 to 0.44,
+    // and a reflection darkened twice — once here and once by the Fresnel term —
+    // came out at four thousandths of the water and could not be seen at all on
+    // a phone. Darkening belongs in one place, and that place is the shader,
+    // where it can be measured against the water it is added to.
+    .modulate({ brightness: 0.95, saturation: 0.45 })
     .tint({ r: 150, g: 190, b: 255 })
     .toBuffer();
 

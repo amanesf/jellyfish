@@ -352,9 +352,14 @@ const fragmentShader = /* glsl */ `
     // tank, which the plate then covers: the reflection was in the render and
     // could not be seen. Acrylic mirrors well before grazing, and it has a
     // floor — there is always a little of the room in the glass.
-    float fresnel = 0.10 + 0.90 * pow(edge, 1.5);
+    // The floor matters more than the curve. A tank's front pane shows you the
+    // room even dead-on — that is what standing in front of one looks like —
+    // and at a floor of 0.10 the middle of the glass was carrying half a
+    // percent of the water's own brightness, which is nothing. A third of the
+    // reflection everywhere, all of it at the sides.
+    float fresnel = 0.34 + 0.66 * pow(edge, 1.4);
     vec3 room = texture2D(uReflect, vec2(mirrorX, clamp(0.34 + vUv.y * 0.40, 0.0, 1.0))).rgb;
-    col += room * fresnel * 0.55;
+    col += room * fresnel * 1.15;
 
     col *= uLed;
 
