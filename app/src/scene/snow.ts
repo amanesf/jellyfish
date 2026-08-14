@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { COC_GLSL, cocUniforms } from '../core/dof';
 import { TANK_HEIGHT } from '../core/tank';
 import { WATER_GLSL } from './water';
 import { waterRamp } from './ramps';
@@ -53,6 +54,8 @@ export function createSnow(camPos: THREE.Vector3): Snow {
 
   const material = new THREE.ShaderMaterial({
     uniforms: {
+      ...cocUniforms(),
+      uEye: { value: camPos },
       uTime: { value: 0 },
       uFlow: { value: 0.5 },
       uCamPos: { value: camPos },
@@ -65,6 +68,7 @@ export function createSnow(camPos: THREE.Vector3): Snow {
       uniform float uFlow;
       varying float vLit;
       varying float vSeed;
+      varying vec3 vWorld;
 
       ${WATER_GLSL}
 
@@ -77,6 +81,7 @@ export function createSnow(camPos: THREE.Vector3): Snow {
         p.x += sin(t * 0.17 + aSeed * 70.0) * 0.05;
         p.z += cos(t * 0.13 + aSeed * 55.0) * 0.05;
         vLit = descent(p.y) * shaft(p, uTime, uFlow);
+        vWorld = p;
         vSeed = aSeed;
         vec4 mv = viewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
@@ -91,9 +96,12 @@ export function createSnow(camPos: THREE.Vector3): Snow {
       precision highp float;
       varying float vLit;
       varying float vSeed;
+      varying vec3 vWorld;
       uniform sampler2D uRamp;
       uniform vec3 uLed;
       uniform float uTime;
+      uniform vec3 uEye;
+      ${COC_GLSL}
       void main() {
         vec2 d = gl_PointCoord - 0.5;
         float r = dot(d, d);
@@ -131,6 +139,11 @@ export function createSnow(camPos: THREE.Vector3): Snow {
         vec3 lit = col * uLed * min(1.7, 0.9 + 1.5 * vLit);
         lit += uLed * glint * (0.7 + 1.5 * vLit);
         gl_FragColor = vec4(lit, soft * (0.30 + 0.52 * vLit) + glint * 0.55);
+        // A mote at the back of the tank is as out of focus as anything else
+        // there, and this is where it shows most: the near snow stays as
+        // pin-points and the far snow goes to soft discs, which is the single
+        // clearest depth cue the water has.
+        if (uMode > 0.5) gl_FragColor = vec4(vec3(circleOfConfusion(vWorld, uEye)), step(0.02, gl_FragColor.a));
       }
     `,
     transparent: true,

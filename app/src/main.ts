@@ -95,7 +95,7 @@ if (frozenAt !== null) {
   const target = Math.max(0, frozenAt);
   while (simTime < target) step(STEP);
   swarm.sortForCamera(camera);
-  postFx.composer.render();
+  postFx.render();
 }
 
 function frame(now: number): void {
@@ -105,7 +105,7 @@ function frame(now: number): void {
     // preserved between frames, so a frozen page that skipped the render would
     // hand scripts/capture.js a cleared canvas — which is exactly what it did.
     swarm.sortForCamera(camera);
-    postFx.composer.render();
+    postFx.render();
     return;
   }
 
@@ -123,7 +123,7 @@ function frame(now: number): void {
   if (steps === 8) carry = 0;
 
   swarm.sortForCamera(camera);
-  postFx.composer.render();
+  postFx.render();
 }
 requestAnimationFrame(frame);
 

@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { AnisotropicKuwaharaPass } from '../effects/anisotropicKuwahara';
 import { PlateShader } from '../effects/plateShader';
+import { DofShader, RENDER_MODE } from './dof';
 import { FRAME_WIDTH, FRAME_HEIGHT } from './tank';
 
 /**
@@ -26,6 +27,10 @@ export interface PostFx {
   setPlate: (texture: THREE.Texture) => void;
   /** The clock, for the acrylic's specular (effects/plateShader.ts). */
   setTime: (t: number) => void;
+  /** Draws the frame: the circle-of-confusion buffer first, then the chain.
+   * Call this rather than composer.render() — the depth of field has no depth
+   * buffer to read and needs that first pass (core/dof.ts). */
+  render: () => void;
   dispose: () => void;
 }
 
@@ -66,6 +71,29 @@ export function createPostFx(
   const kuwahara = new AnisotropicKuwaharaPass(FRAME_WIDTH, FRAME_HEIGHT);
   composer.addPass(kuwahara);
 
+  /*
+   * The circle-of-confusion buffer, at half resolution.
+   *
+   * Half is plenty: it is fed into a blur radius, and a radius does not need to
+   * be sharp — what it must not do is have edges of its own, which is why it is
+   * sampled with LinearFilter and why the pass that reads it weights each tap
+   * by that tap's own value.
+   */
+  const cocTarget = new THREE.WebGLRenderTarget(FRAME_WIDTH / 2, FRAME_HEIGHT / 2, {
+    type: THREE.HalfFloatType,
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    depthBuffer: false,
+  });
+
+  const dof = new ShaderPass(DofShader);
+  dof.uniforms.tCoC.value = cocTarget.texture;
+  dof.uniforms.uTexel.value.set(1 / FRAME_WIDTH, 1 / FRAME_HEIGHT);
+  // After the tonemap and the brush marks, before the plate: the blur belongs
+  // on the finished picture of the water, and it must not touch the painting —
+  // the room is not behind the glass and is not out of focus.
+  composer.addPass(dof);
+
   const plate = new ShaderPass(PlateShader);
   plate.renderToScreen = true;
   composer.addPass(plate);
@@ -78,7 +106,22 @@ export function createPostFx(
     setTime(t) {
       plate.uniforms.uTime.value = t;
     },
+    render() {
+      // Same scene, same camera, every material flipped to write its own CoC.
+      // No duplicate meshes and no override material — which could not work
+      // here in any case, since the bell's whole shape lives in its vertex
+      // shader (scene/jellyfish.ts).
+      RENDER_MODE.value = 1;
+      const previous = renderer.getRenderTarget();
+      renderer.setRenderTarget(cocTarget);
+      renderer.clear();
+      renderer.render(scene, camera);
+      renderer.setRenderTarget(previous);
+      RENDER_MODE.value = 0;
+      composer.render();
+    },
     dispose() {
+      cocTarget.dispose();
       composer.dispose();
     },
   };

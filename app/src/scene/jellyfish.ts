@@ -3,6 +3,7 @@ import { WATER_GLSL } from './water';
 import { bellRamp, veilRamp, waterRamp } from './ramps';
 import { LED_JELLY } from './led';
 import { TANK_HEIGHT } from '../core/tank';
+import { COC_GLSL, cocUniforms } from '../core/dof';
 
 /**
  * One jellyfish: a bell that swims by pulsing, and the arms and tentacles that
@@ -208,6 +209,7 @@ const bellFragment = /* glsl */ `
   uniform vec4 uLed;     // xyz the lamp's colour, w how far it is turned
 
   ${WATER_GLSL}
+  ${COC_GLSL}
 
   void main() {
     vec3 V = normalize(uCamPos - vWorld);
@@ -456,6 +458,10 @@ const bellFragment = /* glsl */ `
     // every marking on the near side.
     if (!gl_FrontFacing) body *= 0.34;
     gl_FragColor = vec4(col, uFade * clamp(body, 0.0, 1.0));
+    // For the depth-of-field buffer (core/dof.ts). The alpha is thresholded
+    // rather than kept: a bell drawn at a third of an alpha would otherwise
+    // blend its CoC with the water's and come out half sharp.
+    if (uMode > 0.5) gl_FragColor = vec4(vec3(circleOfConfusion(vWorld, uCamPos)), step(0.04, gl_FragColor.a));
   }
 `;
 
@@ -611,6 +617,7 @@ const veilFragment = /* glsl */ `
   uniform vec4 uLed;
 
   ${WATER_GLSL}
+  ${COC_GLSL}
 
   void main() {
     float lit = descent(vWorld.y) * shaft(vWorld, uTime, uFlow);
@@ -682,6 +689,7 @@ const veilFragment = /* glsl */ `
     float lace = 0.05 + 0.30 * pow(frill, 2.2);
     float a = uFade * (1.0 - vAlong * 0.72) * mix(0.52, lace, uFrill);
     gl_FragColor = vec4(col, a);
+    if (uMode > 0.5) gl_FragColor = vec4(vec3(circleOfConfusion(vWorld, uCamPos)), step(0.02, a));
   }
 `;
 
@@ -726,6 +734,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
     uniforms: {
       uPulse: { value: rand(seed, 1) },
       uSeed: { value: rand(seed, 2) },
+      ...cocUniforms(),
       uTime: { value: 0 },
       uLag: { value: 1 },
       uFlow: { value: 0.5 },
@@ -863,6 +872,7 @@ export function createJellyfish(opts: JellyfishOptions, shared: {
         // six-armed animal is a solid mass; the reference's are ribbons a
         // tenth of the bell across, and it is the *number* of them crossing
         // each other that fills the space, not the width of any one.
+        ...cocUniforms(),
         uWidth: { value: kind === 'arm' ? size * (species === 'bell' ? 0.42 : 0.26) : size * 0.013 },
         uCamPos: { value: shared.camPos },
         uRamp: { value: shared.veil },

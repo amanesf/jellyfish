@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { COC_GLSL, cocUniforms } from '../core/dof';
 import { EYE_DISTANCE, EYE_HEIGHT, TANK_HEIGHT } from '../core/tank';
 import { waterRamp } from './ramps';
 import { LED } from './led';
@@ -178,6 +179,7 @@ const vertexShader = /* glsl */ `
 
 const fragmentShader = /* glsl */ `
   precision highp float;
+  ${COC_GLSL}
   varying vec2 vUv;
 
   uniform vec3 uCamPos;
@@ -376,6 +378,13 @@ const fragmentShader = /* glsl */ `
     col *= uLed;
 
     gl_FragColor = vec4(col, 1.0);
+    // The body of water itself, for the depth-of-field buffer (core/dof.ts).
+    // A constant, and it has to be: this is a ray-marched volume, not a
+    // surface, so it has no one distance — what the eye reads as "the water"
+    // is the far half of the tank, which is where this sits. The practical
+    // effect is that the light shafts go soft while the near animals stay
+    // sharp, which is what a lens does to a tank.
+    if (uMode > 0.5) gl_FragColor = vec4(vec3(0.62), 1.0);
   }
 `;
 
@@ -406,6 +415,7 @@ export function createWater(): Water {
   });
   const material = new THREE.ShaderMaterial({
     uniforms: {
+      ...cocUniforms(),
       uCamPos: { value: new THREE.Vector3(0, EYE_HEIGHT, EYE_DISTANCE) },
       uInvProj: { value: new THREE.Matrix4() },
       uCamMatrix: { value: new THREE.Matrix4() },
